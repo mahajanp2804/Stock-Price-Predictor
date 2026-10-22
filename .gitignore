@@ -1,4 +1,4 @@
-# Secrets — copy main/config.example.properties to main/config.properties
+# Secrets — copy config.example.properties to config.properties
 config.properties
 
 # Build output
