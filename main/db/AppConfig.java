@@ -18,7 +18,12 @@ public class AppConfig {
         }
     }
 
-    public static String get(String key)           { return props.getProperty(key, ""); }
+    // Environment variable (e.g. finnhub.key -> FINNHUB_KEY) wins over config.properties
+    public static String get(String key) {
+        String env = System.getenv(key.toUpperCase().replace('.', '_'));
+        if (env != null && !env.isBlank()) return env;
+        return props.getProperty(key, "");
+    }
 
     // Individual API keys — returns empty string if not set
     public static String getFinnhubKey()           { return get("finnhub.key"); }
