@@ -8,9 +8,10 @@ A Java desktop app for **paper trading** and **short-term price forecasting**. L
 
 ## Features
 
-- **Market prices**, loaded at startup, for Apple, Microsoft, Amazon, Google and Tesla. The app tries three data providers in order (Finnhub → Twelve Data → Alpha Vantage) and falls back to the last price saved in MySQL if all three fail.
-- **Accounts:** register and log in. Passwords are hashed with BCrypt.
-- **Paper trading:** buy and sell against a virtual balance. Each trade runs in a single database transaction.
+- **Live prices** for Apple, Microsoft, Amazon, Google and Tesla. Finnhub quotes refresh every minute and again right before each trade. Daily price history (used for predictions) comes from Twelve Data, falling back to Alpha Vantage, and then to the last price saved in MySQL.
+- **Accounts:** register and log in. Passwords are hashed with standard bcrypt (cost 12).
+- **Paper trading:** buy and sell against a virtual balance. Money is exact (`DECIMAL` / `BigDecimal`), and each trade locks the user's balance inside one database transaction, so simultaneous trades can't overspend.
+- **Responsive UI:** all database and network work runs in the background.
 - **Portfolio:** holdings with average cost, market value and unrealised P&L.
 - **Transaction history**, with CSV export of the portfolio and of transactions.
 - **Price prediction:** linear regression adjusted by EMA and RSI, forecasting N days ahead.
@@ -19,7 +20,7 @@ A Java desktop app for **paper trading** and **short-term price forecasting**. L
 
 ## Tech stack
 
-Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · org.json · JUnit 5 · Maven
+Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · bcrypt (at.favre.lib) · SLF4J · org.json · JUnit 5 · Maven
 
 ## Getting started
 
@@ -28,13 +29,21 @@ Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · org.json · JUnit 5 · Maven
 - JDK 17 or newer
 - Maven 3.9+
 - MySQL 8 running locally
-- Free API keys from at least one of [Finnhub](https://finnhub.io), [Twelve Data](https://twelvedata.com) or [Alpha Vantage](https://www.alphavantage.co)
+- Free API keys: [Twelve Data](https://twelvedata.com) and/or [Alpha Vantage](https://www.alphavantage.co) for price history, and [Finnhub](https://finnhub.io) for live quotes (optional — without it, trades use the last daily close)
 
 ### 1. Create the database
 
 ```bash
 mysql -u root -p < db/stockdb.sql
 ```
+
+**Upgrading an existing database** created before money columns became `DECIMAL`: run this once.
+
+```bash
+mysql -u root -p < db/migrate_002_decimal_money.sql
+```
+
+Accounts created with the old password hashing still log in, and are upgraded to standard bcrypt automatically on their next login.
 
 ### 2. Configure
 
@@ -76,17 +85,18 @@ mvn test
 
 ```
 ├── config.example.properties   # config template (copy to config.properties)
-├── db/stockdb.sql              # MySQL schema
+├── db/
+│   ├── stockdb.sql             # MySQL schema
+│   └── migrate_002_*.sql       # one-time upgrades for existing databases
 ├── pom.xml
 └── src
     ├── main/java/com/capstone
-    │   ├── data/        # price providers (Finnhub, Twelve Data, Alpha Vantage) + fallback chain
-    │   ├── db/          # config, connection pool, auth, portfolio/trading logic
-    │   ├── model/       # Stock, PortfolioEntry
+    │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes (Finnhub)
+    │   ├── db/          # config, connection pool, auth + password hashing, trading logic
+    │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
     │   ├── prediction/  # regression, SMA/EMA/RSI, trend detection
-    │   └── ui/          # Swing GUI, login dialog, CSV export
-    └── test/java/com/capstone
-        └── prediction/  # unit tests for the prediction module
+    │   └── ui/          # Swing GUI, login dialog, CSV export, background tasks
+    └── test/java/com/capstone   # unit tests: prediction, money, passwords, provider parsing, CSV
 ```
 
 ## How the prediction works
@@ -101,7 +111,7 @@ The trend label compares the 5-day and 20-day simple moving averages. When fewer
 
 - [x] Keep secrets out of git; allow environment-variable config
 - [x] Standard Maven layout, runnable jar, CI
-- [ ] Exact money arithmetic (`BigDecimal` / `DECIMAL`), keep the UI responsive, periodic price refresh
-- [ ] Tests for trading logic and data providers
+- [x] Exact money arithmetic, locked balance updates, responsive UI, live price refresh, standard bcrypt, SLF4J logging
+- [ ] Automated tests for trading logic against a real database; split the GUI into smaller classes
 - [ ] Backtest the predictor against a "tomorrow = today" baseline (MAE, RMSE, directional accuracy)
 - [ ] Any-ticker search, price charts, watchlist

@@ -1,6 +1,7 @@
 package com.capstone.ui;
 
 import com.capstone.db.AuthManager;
+import com.capstone.db.PasswordHasher;
 import javax.swing.*;
 import java.awt.*;
 
@@ -51,22 +52,55 @@ public class LoginDialog extends JDialog {
         loginBtn.addActionListener(e -> {
             String user = usernameField.getText().trim();
             String pass = new String(passField.getPassword());
-            if (user.isEmpty() || pass.isEmpty()) { statusLabel.setText("Please enter username and password."); return; }
-            int uid = authManager.login(user, pass);
-            if (uid > 0) { loggedInUserId = uid; loggedInUsername = user; dispose(); }
-            else { statusLabel.setText("Invalid username or password."); passField.setText(""); }
+            if (user.isEmpty() || pass.isEmpty()) { showStatus(statusLabel, "Please enter username and password.", false); return; }
+            setBusy(true, loginBtn, registerBtn);
+            showStatus(statusLabel, "Signing in…", true);
+            UiTasks.run(() -> authManager.login(user, pass),
+                uid -> {
+                    setBusy(false, loginBtn, registerBtn);
+                    if (uid > 0) { loggedInUserId = uid; loggedInUsername = user; dispose(); }
+                    else { showStatus(statusLabel, "Invalid username or password.", false); passField.setText(""); }
+                },
+                err -> {
+                    setBusy(false, loginBtn, registerBtn);
+                    showStatus(statusLabel, "Can't reach the database. Is MySQL running?", false);
+                });
         });
 
         registerBtn.addActionListener(e -> {
             String user = usernameField.getText().trim();
             String pass = new String(passField.getPassword());
-            if (user.isEmpty() || pass.isEmpty()) { statusLabel.setText("Please enter username and password."); return; }
-            if (pass.length() < 6) { statusLabel.setText("Password must be at least 6 characters."); return; }
-            if (authManager.register(user, pass)) { statusLabel.setForeground(new Color(0, 128, 0)); statusLabel.setText("Account created! You can now log in."); }
-            else { statusLabel.setForeground(Color.RED); statusLabel.setText("Username already taken."); }
+            if (user.isEmpty() || pass.isEmpty()) { showStatus(statusLabel, "Please enter username and password.", false); return; }
+            if (pass.length() < 6) { showStatus(statusLabel, "Password must be at least 6 characters.", false); return; }
+            if (!PasswordHasher.isAcceptableLength(pass)) { showStatus(statusLabel, "Password is too long (max 72 bytes).", false); return; }
+            setBusy(true, loginBtn, registerBtn);
+            showStatus(statusLabel, "Creating account…", true);
+            UiTasks.run(() -> authManager.register(user, pass),
+                result -> {
+                    setBusy(false, loginBtn, registerBtn);
+                    switch (result) {
+                        case OK             -> showStatus(statusLabel, "Account created! You can now log in.", true);
+                        case USERNAME_TAKEN -> showStatus(statusLabel, "Username already taken.", false);
+                        case INVALID        -> showStatus(statusLabel, "Invalid username or password.", false);
+                        case ERROR          -> showStatus(statusLabel, "Can't reach the database. Is MySQL running?", false);
+                    }
+                },
+                err -> {
+                    setBusy(false, loginBtn, registerBtn);
+                    showStatus(statusLabel, "Registration failed: " + err.getMessage(), false);
+                });
         });
 
         setContentPane(root);
+    }
+
+    private static void showStatus(JLabel label, String text, boolean ok) {
+        label.setForeground(ok ? new Color(0, 128, 0) : Color.RED);
+        label.setText(text);
+    }
+
+    private static void setBusy(boolean busy, JButton... buttons) {
+        for (JButton b : buttons) b.setEnabled(!busy);
     }
 
     public int    getLoggedInUserId()   { return loggedInUserId; }

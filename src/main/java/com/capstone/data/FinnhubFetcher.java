@@ -2,31 +2,25 @@ package com.capstone.data;
 
 import com.capstone.db.AppConfig;
 import org.json.JSONObject;
-import org.json.JSONArray;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.OptionalDouble;
 
 /**
- * Fetches daily price history from Finnhub.
+ * Fetches the latest price from Finnhub.
  *
- * Endpoint: GET /stock/candle
- * Free tier: 60 requests/minute, ~15-min delayed data.
- * Response:  { "c": [...closing prices], "s": "ok" }
+ * Endpoint: GET /quote
+ * Free tier: 60 requests/minute, real-time US quotes.
+ * Response:  { "c": current, "pc": previous close, "t": unix time, ... }
  *
- * Candles require UNIX timestamps for from/to.
- * We request the last HISTORY_DAYS calendar days.
+ * Finnhub's /stock/candle (daily history) is not available on the free plan
+ * (HTTP 403), so history comes from Twelve Data / Alpha Vantage instead.
  */
-public class FinnhubFetcher implements StockFetcher {
+public class FinnhubFetcher implements QuoteFetcher {
 
-    private static final String BASE = "https://finnhub.io/api/v1/stock/candle";
-    private static final int HISTORY_DAYS = 30;
+    private static final Logger log = LoggerFactory.getLogger(FinnhubFetcher.class);
+    private static final String BASE = "https://finnhub.io/api/v1/quote";
 
     @Override
     public String providerName() { return "Finnhub"; }
@@ -38,48 +32,24 @@ public class FinnhubFetcher implements StockFetcher {
     }
 
     @Override
-    public List<Double> fetchHistory(String symbol) {
-        List<Double> history = new ArrayList<>();
+    public OptionalDouble fetchQuote(String symbol) {
         try {
-            long to   = LocalDate.now().atStartOfDay().toEpochSecond(ZoneOffset.UTC);
-            long from = LocalDate.now().minusDays(HISTORY_DAYS)
-                                       .atStartOfDay().toEpochSecond(ZoneOffset.UTC);
-
-            String urlStr = BASE
-                + "?symbol=" + symbol
-                + "&resolution=D"
-                + "&from=" + from
-                + "&to=" + to
-                + "&token=" + AppConfig.getFinnhubKey();
-
-            String raw = get(urlStr);
-            JSONObject json = new JSONObject(raw);
-
-            if ("ok".equals(json.optString("s")) && json.has("c")) {
-                JSONArray closes = json.getJSONArray("c");
-                for (int i = 0; i < closes.length(); i++) {
-                    history.add(closes.getDouble(i));
-                }
-            } else {
-                System.out.println("[Finnhub] No data for " + symbol
-                    + " — status: " + json.optString("s"));
-            }
+            String raw = Http.get(BASE, Http.params("symbol", symbol, "token", AppConfig.getFinnhubKey()));
+            OptionalDouble price = parseQuote(raw);
+            if (price.isEmpty()) log.warn("Finnhub returned no quote for {}", symbol);
+            return price;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return OptionalDouble.empty();
         } catch (Exception e) {
-            System.out.println("[Finnhub] Error for " + symbol + ": " + e.getMessage());
+            log.warn("Finnhub quote failed for {}: {}", symbol, e.getMessage());
+            return OptionalDouble.empty();
         }
-        return history;
     }
 
-    private String get(String urlStr) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-        conn.setRequestMethod("GET");
-        conn.setConnectTimeout(8000);
-        conn.setReadTimeout(8000);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) sb.append(line);
-        reader.close();
-        return sb.toString();
+    /** Unknown symbols come back as all zeros, so a non-positive price means "no quote". */
+    static OptionalDouble parseQuote(String json) {
+        double c = new JSONObject(json).optDouble("c", 0);
+        return c > 0 ? OptionalDouble.of(c) : OptionalDouble.empty();
     }
 }

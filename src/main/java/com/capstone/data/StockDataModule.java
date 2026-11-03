@@ -2,118 +2,122 @@ package com.capstone.data;
 
 import com.capstone.db.DBConnection;
 import com.capstone.model.Stock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
-import javax.swing.SwingWorker;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Loads stock price history using a provider chain:
+ * Loads stock prices.
  *
- *   1. Finnhub       (primary  — 60 req/min,   ~15 min delay)
- *   2. Twelve Data   (fallback — 800 req/day,   4 hr  delay)
- *   3. Alpha Vantage (fallback — 25 req/day,    15 min delay)
- *   4. DB cache      (offline  — last persisted price)
+ * Daily history (for prediction), first provider with data wins:
+ *   1. Twelve Data   (800 req/day)
+ *   2. Alpha Vantage (25 req/day)
+ *   3. DB cache      (last persisted price)
  *
- * Only configured providers (non-empty key in config.properties) are tried.
- * Each stock is attempted independently so one bad ticker doesn't break others.
+ * Live price (what trades execute at): Finnhub /quote (60 req/min).
+ *
+ * Only providers with a non-empty key in config.properties are used.
+ * All methods here block on network/DB — call them off the Swing UI thread.
  */
 public class StockDataModule {
 
-    private final Map<String, Stock> stockMap = Collections.synchronizedMap(new HashMap<>());
+    private static final Logger log = LoggerFactory.getLogger(StockDataModule.class);
 
-    /** Chain is tried in order — first non-empty result wins. */
+    private final Map<String, Stock> stockMap = new ConcurrentHashMap<>();
+
+    /** History chain is tried in order — first non-empty result wins. */
     private final List<StockFetcher> chain = List.of(
-        new FinnhubFetcher(),
         new TwelvedataFetcher(),
         new AlphavantageFetcher()
     );
 
-    private static final String[][] STOCKS = {
-        {"Apple",     "AAPL"},
-        {"Microsoft", "MSFT"},
-        {"Amazon",    "AMZN"},
-        {"Google",    "GOOGL"},
-        {"Tesla",     "TSLA"}
-    };
+    private final QuoteFetcher quoteFetcher = new FinnhubFetcher();
 
-    // ----------------------------------------------------------------
-    // Async load (called from GUI — never blocks the EDT)
-    // ----------------------------------------------------------------
-
-    public void populateStockDataAsync(Runnable onComplete) {
-        new SwingWorker<Void, Void>() {
-            @Override
-            protected Void doInBackground() {
-                printChainStatus();
-                for (String[] s : STOCKS) {
-                    String name   = s[0];
-                    String symbol = s[1];
-                    List<Double> history = fetchWithChain(symbol);
-
-                    if (!history.isEmpty()) {
-                        stockMap.put(name.toLowerCase(), new Stock(name, history));
-                        persistPriceToDB(name, history.get(history.size() - 1));
-                    } else {
-                        // All providers failed — fall back to DB cache
-                        double cached = loadPriceFromDB(name);
-                        if (cached > 0) {
-                            stockMap.put(name.toLowerCase(), new Stock(name, List.of(cached)));
-                            System.out.println("[StockDataModule] " + name
-                                + " — all APIs failed, using DB cache $" + cached);
-                        } else {
-                            System.out.println("[StockDataModule] " + name
-                                + " — all APIs failed and no DB cache. Skipping.");
-                        }
-                    }
-                }
-                return null;
-            }
-
-            @Override
-            protected void done() {
-                if (onComplete != null) onComplete.run();
-            }
-        }.execute();
+    private static final Map<String, String> SYMBOLS = new LinkedHashMap<>();
+    static {
+        SYMBOLS.put("apple",     "AAPL");
+        SYMBOLS.put("microsoft", "MSFT");
+        SYMBOLS.put("amazon",    "AMZN");
+        SYMBOLS.put("google",    "GOOGL");
+        SYMBOLS.put("tesla",     "TSLA");
     }
 
     // ----------------------------------------------------------------
-    // Chain logic — try each provider in order, stop at first success
+    // Loading
     // ----------------------------------------------------------------
+
+    /** Loads history for every stock, then live quotes. Blocking. */
+    public void loadAll() {
+        logChainStatus();
+        for (Map.Entry<String, String> s : SYMBOLS.entrySet()) {
+            String name = displayName(s.getKey());
+            List<Double> history = fetchWithChain(s.getValue());
+
+            if (!history.isEmpty()) {
+                stockMap.put(s.getKey(), new Stock(name, history));
+                persistPriceToDB(name, history.get(history.size() - 1));
+            } else {
+                double cached = loadPriceFromDB(name);
+                if (cached > 0) {
+                    stockMap.put(s.getKey(), new Stock(name, List.of(cached)));
+                    log.warn("{}: all history providers failed, using DB cache ${}", name, cached);
+                } else {
+                    log.warn("{}: all history providers failed and no DB cache, skipping", name);
+                }
+            }
+        }
+        refreshQuotes();
+    }
+
+    /** Updates the live price of every loaded stock. Returns how many were updated. Blocking. */
+    public int refreshQuotes() {
+        if (!quoteFetcher.isConfigured()) return 0;
+        int updated = 0;
+        for (String key : stockMap.keySet()) {
+            if (refreshQuote(key)) updated++;
+        }
+        return updated;
+    }
+
+    /**
+     * Fetches a fresh live price for one stock, e.g. right before a trade.
+     * Returns false if no quote could be fetched (the stock keeps its last known price).
+     */
+    public boolean refreshQuote(String name) {
+        String key = name.toLowerCase();
+        Stock stock = stockMap.get(key);
+        if (stock == null || !quoteFetcher.isConfigured()) return false;
+        OptionalDouble quote = quoteFetcher.fetchQuote(SYMBOLS.get(key));
+        if (quote.isEmpty()) return false;
+        stock.setLivePrice(quote.getAsDouble());
+        persistPriceToDB(stock.getName(), quote.getAsDouble());
+        return true;
+    }
 
     private List<Double> fetchWithChain(String symbol) {
         for (StockFetcher fetcher : chain) {
-            if (!fetcher.isConfigured()) {
-                System.out.println("[StockDataModule] Skipping "
-                    + fetcher.providerName() + " — no API key configured.");
-                continue;
-            }
-            System.out.println("[StockDataModule] Trying "
-                + fetcher.providerName() + " for " + symbol + "...");
+            if (!fetcher.isConfigured()) continue;
             List<Double> result = fetcher.fetchHistory(symbol);
             if (!result.isEmpty()) {
-                System.out.println("[StockDataModule] Got "
-                    + result.size() + " days from " + fetcher.providerName());
+                log.info("{}: {} days of history from {}", symbol, result.size(), fetcher.providerName());
                 return result;
             }
-            System.out.println("[StockDataModule] "
-                + fetcher.providerName() + " returned no data for " + symbol
-                + " — trying next provider.");
+            log.info("{}: no data from {}, trying next provider", symbol, fetcher.providerName());
         }
         return Collections.emptyList();
     }
 
-    /** Logs which providers are active at startup. */
-    private void printChainStatus() {
-        System.out.println("[StockDataModule] Provider chain:");
-        int active = 0;
+    private void logChainStatus() {
         for (StockFetcher f : chain) {
-            String status = f.isConfigured() ? "ACTIVE" : "skipped (no key)";
-            System.out.println("  " + f.providerName() + " — " + status);
-            if (f.isConfigured()) active++;
+            log.info("History provider {}: {}", f.providerName(), f.isConfigured() ? "active" : "skipped (no key)");
         }
-        if (active == 0) {
-            System.out.println("  WARNING: no API keys configured — will use DB cache only.");
+        log.info("Quote provider {}: {}", quoteFetcher.providerName(), quoteFetcher.isConfigured() ? "active" : "skipped (no key)");
+        if (chain.stream().noneMatch(StockFetcher::isConfigured)) {
+            log.warn("No history API keys configured — using DB cache only");
         }
     }
 
@@ -121,9 +125,26 @@ public class StockDataModule {
     // Accessors
     // ----------------------------------------------------------------
 
-    public Stock getRealtimeStock(String name) { return stockMap.get(name.toLowerCase()); }
-    public Stock getStockByName(String name)   { return stockMap.get(name.toLowerCase()); }
-    public Set<String> getAllStockNames()       { return stockMap.keySet(); }
+    public Stock getStockByName(String name) { return stockMap.get(name.toLowerCase()); }
+
+    /** Display names (e.g. "Apple") of loaded stocks, sorted. */
+    public List<String> getAllStockNames() {
+        List<String> names = new ArrayList<>();
+        for (Stock s : stockMap.values()) names.add(s.getName());
+        Collections.sort(names);
+        return names;
+    }
+
+    /** Display name → latest price for every loaded stock. */
+    public Map<String, Double> latestPrices() {
+        Map<String, Double> prices = new HashMap<>();
+        for (Stock s : stockMap.values()) prices.put(s.getName(), s.getLatestPrice());
+        return prices;
+    }
+
+    private static String displayName(String key) {
+        return Character.toUpperCase(key.charAt(0)) + key.substring(1);
+    }
 
     // ----------------------------------------------------------------
     // DB persistence (cache latest price for offline fallback)
@@ -135,10 +156,10 @@ public class StockDataModule {
         try (Connection conn = DBConnection.get();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, stockName);
-            ps.setDouble(2, price);
+            ps.setBigDecimal(2, BigDecimal.valueOf(price));
             ps.executeUpdate();
         } catch (SQLException e) {
-            System.out.println("[StockDataModule] Could not persist price for " + stockName);
+            log.warn("Could not persist price for {}: {}", stockName, e.getMessage());
         }
     }
 
@@ -147,10 +168,11 @@ public class StockDataModule {
         try (Connection conn = DBConnection.get();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, stockName);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) return rs.getDouble("current_price");
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getBigDecimal("current_price").doubleValue();
+            }
         } catch (SQLException e) {
-            System.out.println("[StockDataModule] Could not load cache for " + stockName);
+            log.warn("Could not load cached price for {}: {}", stockName, e.getMessage());
         }
         return -1;
     }

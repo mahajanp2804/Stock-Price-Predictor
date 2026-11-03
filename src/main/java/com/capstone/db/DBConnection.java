@@ -20,6 +20,9 @@ public class DBConnection {
         cfg.setMaxLifetime(1_800_000);
         cfg.setPoolName("StockAppPool");
         cfg.setConnectionTestQuery("SELECT 1");
+        // Don't fail class initialisation if MySQL is down at startup —
+        // get() throws SQLException instead, and works once MySQL is back
+        cfg.setInitializationFailTimeout(-1);
         pool = new HikariDataSource(cfg);
     }
 

@@ -1,9 +1,13 @@
 package com.capstone.db;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.InputStream;
 import java.util.Properties;
 
 public class AppConfig {
+    private static final Logger log = LoggerFactory.getLogger(AppConfig.class);
     private static final Properties props = new Properties();
 
     static {
@@ -14,7 +18,7 @@ public class AppConfig {
                 props.load(in);
             }
         } catch (Exception e) {
-            System.err.println("[AppConfig] Could not load config.properties: " + e.getMessage());
+            log.warn("Could not load config.properties ({}); using environment variables only", e.getMessage());
         }
     }
 

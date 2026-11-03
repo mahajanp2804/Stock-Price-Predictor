@@ -3,7 +3,7 @@ package com.capstone.data;
 import java.util.List;
 
 /**
- * Common interface for all stock data providers.
+ * Common interface for daily price-history providers.
  * Every fetcher must implement these three methods so
  * StockDataModule can treat them all identically in the chain.
  */

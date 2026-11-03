@@ -1,8 +1,20 @@
 package com.capstone.db;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 
-public class BCrypt {
+/**
+ * The project's original hand-written bcrypt. It is NOT standard bcrypt: it keeps
+ * only 16 of the 23 output bytes, so its hashes are 51 characters instead of 60
+ * and no standard library can verify them.
+ *
+ * Kept only so accounts created before the switch to a real bcrypt library can
+ * still log in; PasswordHasher re-hashes them on their next successful login.
+ * Do not use it for new hashes.
+ */
+@Deprecated
+final class LegacyBCrypt {
     private static final int GENSALT_DEFAULT_LOG2_ROUNDS = 10;
     private static final int BCRYPT_SALT_LEN = 16;
     private static final int BLOWFISH_NUM_ROUNDS = 16;
@@ -18,8 +30,8 @@ public class BCrypt {
     private byte[] crypt(byte[] password,byte[] salt,int logRounds){init();int rounds=1<<logRounds;eksKey(salt,password);for(int i=0;i<rounds;i++){key(password);key(salt);}int[] cdata={(int)C1,(int)C2,(int)C3,(int)C4};for(int i=0;i<64;i++){encipher(cdata,0);encipher(cdata,2);}byte[] ret=new byte[BCRYPT_SALT_LEN];for(int i=0;i<cdata.length;i++){ret[4*i]=(byte)(cdata[i]>>24);ret[4*i+1]=(byte)(cdata[i]>>16);ret[4*i+2]=(byte)(cdata[i]>>8);ret[4*i+3]=(byte)cdata[i];}return ret;}
     public static String gensalt(){return gensalt(GENSALT_DEFAULT_LOG2_ROUNDS);}
     public static String gensalt(int logRounds){SecureRandom rnd=new SecureRandom();byte[] saltBytes=new byte[BCRYPT_SALT_LEN];rnd.nextBytes(saltBytes);StringBuilder sb=new StringBuilder();sb.append("$2a$");if(logRounds<10)sb.append("0");sb.append(logRounds).append("$");sb.append(encodeBase64(saltBytes,BCRYPT_SALT_LEN));return sb.toString();}
-    public static String hashpw(String password,String salt){BCrypt B=new BCrypt();if(!salt.startsWith("$2a$")&&!salt.startsWith("$2b$"))throw new IllegalArgumentException("Invalid salt version");int off=4,rounds;String realSalt;rounds=Integer.parseInt(salt.substring(off,off=salt.indexOf('$',off)));realSalt=salt.substring(++off,off+22);byte[] saltb=decodeBase64(realSalt,BCRYPT_SALT_LEN);byte[] passwordb=(password+"\000").getBytes(java.nio.charset.StandardCharsets.UTF_8);byte[] hashed=B.crypt(passwordb,saltb,rounds);StringBuilder rs=new StringBuilder();rs.append("$2a$");if(rounds<10)rs.append("0");rs.append(rounds).append("$");rs.append(encodeBase64(saltb,saltb.length));rs.append(encodeBase64(hashed,hashed.length));return rs.toString();}
-    public static boolean checkpw(String plaintext,String hashed){return hashed.equals(hashpw(plaintext,hashed));}
+    public static String hashpw(String password,String salt){LegacyBCrypt B=new LegacyBCrypt();if(!salt.startsWith("$2a$")&&!salt.startsWith("$2b$"))throw new IllegalArgumentException("Invalid salt version");int off=4,rounds;String realSalt;rounds=Integer.parseInt(salt.substring(off,off=salt.indexOf('$',off)));realSalt=salt.substring(++off,off+22);byte[] saltb=decodeBase64(realSalt,BCRYPT_SALT_LEN);byte[] passwordb=(password+"\000").getBytes(java.nio.charset.StandardCharsets.UTF_8);byte[] hashed=B.crypt(passwordb,saltb,rounds);StringBuilder rs=new StringBuilder();rs.append("$2a$");if(rounds<10)rs.append("0");rs.append(rounds).append("$");rs.append(encodeBase64(saltb,saltb.length));rs.append(encodeBase64(hashed,hashed.length));return rs.toString();}
+    public static boolean checkpw(String plaintext,String hashed){return MessageDigest.isEqual(hashed.getBytes(StandardCharsets.UTF_8),hashpw(plaintext,hashed).getBytes(StandardCharsets.UTF_8));}
     private static final char[] BASE64_CODE="./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
     private static final byte[] INDEX_64={-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,0,1,54,55,56,57,58,59,60,61,62,63,-1,-1,-1,-1,-1,-1,-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,-1,-1,-1,-1,-1,-1,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,-1,-1,-1,-1,-1};
     private static String encodeBase64(byte[] d,int len){StringBuilder rs=new StringBuilder();int off=0,c1,c2;while(off<len){c1=d[off++]&0xff;rs.append(BASE64_CODE[(c1>>2)&0x3f]);c1=(c1&0x03)<<4;if(off>=len){rs.append(BASE64_CODE[c1&0x3f]);break;}c2=d[off++]&0xff;c1|=(c2>>4)&0x0f;rs.append(BASE64_CODE[c1&0x3f]);c1=(c2&0x0f)<<2;if(off>=len){rs.append(BASE64_CODE[c1&0x3f]);break;}c2=d[off++]&0xff;c1|=(c2>>6)&0x03;rs.append(BASE64_CODE[c1&0x3f]);rs.append(BASE64_CODE[c2&0x3f]);}return rs.toString();}
