@@ -1,6 +1,5 @@
 package com.capstone.prediction;
 
-import com.capstone.model.Stock;
 import java.util.*;
 
 public class PredictionModule {
@@ -66,13 +65,5 @@ public class PredictionModule {
         if (count == 0 || losses == 0) return gains == 0 ? 50 : 100;
         double rs = (gains/count) / (losses/count);
         return 100 - (100 / (1 + rs));
-    }
-
-    @Deprecated public static String capitalize(String str) { return Utils.capitalize(str); }
-
-    public static void displayRecentHistory(Stock stock) {
-        List<Double> history = stock.getPriceHistory();
-        System.out.println("\nRecent Stock Prices for " + stock.getName() + ":");
-        for (int i = 0; i < history.size(); i++) System.out.printf(" Day %d : $%.2f%n", i+1, history.get(i));
     }
 }

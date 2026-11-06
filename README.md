@@ -28,24 +28,10 @@ Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · bcrypt (at.favre.lib) · SLF
 
 - JDK 17 or newer
 - Maven 3.9+
-- MySQL 8 running locally
+- MySQL 8 or newer running locally
 - Free API keys: [Twelve Data](https://twelvedata.com) and/or [Alpha Vantage](https://www.alphavantage.co) for price history, and [Finnhub](https://finnhub.io) for live quotes (optional — without it, trades use the last daily close)
 
-### 1. Create the database
-
-```bash
-mysql -u root -p < db/stockdb.sql
-```
-
-**Upgrading an existing database** created before money columns became `DECIMAL`: run this once.
-
-```bash
-mysql -u root -p < db/migrate_002_decimal_money.sql
-```
-
-Accounts created with the old password hashing still log in, and are upgraded to standard bcrypt automatically on their next login.
-
-### 2. Configure
+### 1. Configure
 
 ```bash
 cp config.example.properties config.properties
@@ -62,7 +48,7 @@ You can set any value as an environment variable instead, and it takes priority 
 | `alphavantage.key` | `ALPHAVANTAGE_KEY` |
 | `db.url` / `db.user` / `db.password` | `DB_URL` / `DB_USER` / `DB_PASSWORD` |
 
-### 3. Build and run
+### 2. Build and run
 
 ```bash
 mvn clean package
@@ -75,28 +61,38 @@ Run it from the project root so it finds `config.properties`. To run from source
 mvn compile exec:java
 ```
 
+**The database sets itself up.** With the default `db.url` (`…/stockdb?createDatabaseIfNotExist=true`), MySQL creates `stockdb` and [Flyway](https://flywaydb.org) applies the schema migrations in `src/main/resources/db/migration` on first connect.
+
+**Upgrading from an older version:** a `stockdb` created by the old `stockdb.sql` script is detected and upgraded automatically, and your data is kept. Accounts created with the old password hashing still log in and are moved to standard bcrypt on their next login.
+
 ### Run tests
 
 ```bash
 mvn test
 ```
 
+The database tests (`*DbTest`) run only when `TEST_DB_URL` points at a MySQL server; otherwise they're skipped. They empty every table they touch, so use a separate database, never your real one:
+
+```bash
+TEST_DB_URL='jdbc:mysql://127.0.0.1:3306/stockdb_test?createDatabaseIfNotExist=true' TEST_DB_USER=root TEST_DB_PASSWORD=yourpassword mvn test
+```
+
+CI runs all tests, including the database tests, against MySQL 8.4 on every push.
+
 ## Project structure
 
 ```
 ├── config.example.properties   # config template (copy to config.properties)
-├── db/
-│   ├── stockdb.sql             # MySQL schema
-│   └── migrate_002_*.sql       # one-time upgrades for existing databases
 ├── pom.xml
 └── src
     ├── main/java/com/capstone
     │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes (Finnhub)
-    │   ├── db/          # config, connection pool, auth + password hashing, trading logic
+    │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading logic
     │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
     │   ├── prediction/  # regression, SMA/EMA/RSI, trend detection
-    │   └── ui/          # Swing GUI, login dialog, CSV export, background tasks
-    └── test/java/com/capstone   # unit tests: prediction, money, passwords, provider parsing, CSV
+    │   └── ui/          # main window, one class per tab, login dialog, CSV export
+    ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
+    └── test/java/com/capstone         # unit tests + database tests (*DbTest)
 ```
 
 ## How the prediction works
@@ -112,6 +108,6 @@ The trend label compares the 5-day and 20-day simple moving averages. When fewer
 - [x] Keep secrets out of git; allow environment-variable config
 - [x] Standard Maven layout, runnable jar, CI
 - [x] Exact money arithmetic, locked balance updates, responsive UI, live price refresh, standard bcrypt, SLF4J logging
-- [ ] Automated tests for trading logic against a real database; split the GUI into smaller classes
+- [x] Database tests in CI, Flyway migrations, GUI split into one class per tab
 - [ ] Backtest the predictor against a "tomorrow = today" baseline (MAE, RMSE, directional accuracy)
 - [ ] Any-ticker search, price charts, watchlist

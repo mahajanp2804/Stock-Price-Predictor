@@ -217,32 +217,4 @@ class PredictionModuleTest {
     void rsi_singlePrice_returnsNeutral() {
         assertEquals(50.0, PredictionModule.rsi(List.of(100.0), 5), 0.001);
     }
-
-    // ----------------------------------------------------------------
-    // Utils.capitalize()
-    // ----------------------------------------------------------------
-
-    @Test
-    @DisplayName("capitalize: first letter uppercased")
-    void capitalize_uppercasesFirst() {
-        assertEquals("Apple", Utils.capitalize("apple"));
-    }
-
-    @Test
-    @DisplayName("capitalize: already capitalised string unchanged")
-    void capitalize_alreadyCapitalised() {
-        assertEquals("Microsoft", Utils.capitalize("Microsoft"));
-    }
-
-    @Test
-    @DisplayName("capitalize: empty string returns empty string")
-    void capitalize_emptyString() {
-        assertEquals("", Utils.capitalize(""));
-    }
-
-    @Test
-    @DisplayName("capitalize: null returns null")
-    void capitalize_null() {
-        assertNull(Utils.capitalize(null));
-    }
 }

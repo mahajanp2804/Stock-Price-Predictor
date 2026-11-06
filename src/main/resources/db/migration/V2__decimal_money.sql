@@ -1,6 +1,5 @@
--- One-time upgrade for databases created before money columns became DECIMAL.
--- Safe to run once on an existing stockdb; new installs only need stockdb.sql.
-USE stockdb;
+-- Money columns become exact DECIMAL: cash to the cent, share prices to 4 dp.
+-- MODIFY is idempotent, so this is safe on databases already upgraded by hand.
 
 ALTER TABLE users        MODIFY balance       DECIMAL(15,2) NOT NULL DEFAULT 10000.00;
 ALTER TABLE stocks       MODIFY current_price DECIMAL(15,4) NOT NULL;
