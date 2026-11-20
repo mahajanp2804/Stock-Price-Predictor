@@ -1,13 +1,14 @@
 package com.capstone.data;
 
-import com.capstone.db.DBConnection;
+import com.capstone.db.PriceCache;
 import com.capstone.model.PricePoint;
 import com.capstone.model.Stock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.math.BigDecimal;
-import java.sql.*;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,10 +16,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Loads stock prices.
  *
- * Daily history (for prediction), first provider with data wins:
- *   1. Twelve Data   (800 req/day)
+ * Daily history (for prediction):
+ *   0. DB history cache, if downloaded in the last CACHE_TTL
+ *   1. Twelve Data   (800 req/day, 8 req/min)
  *   2. Alpha Vantage (25 req/day)
- *   3. DB cache      (last persisted price)
+ *   3. DB history cache of any age
+ *   4. Last recorded price only
  *
  * Live price (what trades execute at): Finnhub /quote (60 req/min).
  *
@@ -39,6 +42,11 @@ public class StockDataModule {
 
     private final QuoteFetcher quoteFetcher = new FinnhubFetcher();
 
+    private final PriceCache cache = new PriceCache();
+
+    /** Cached history younger than this is used without calling a provider. */
+    static final Duration CACHE_TTL = Duration.ofHours(6);
+
     private static final Map<String, String> SYMBOLS = new LinkedHashMap<>();
     static {
         SYMBOLS.put("apple",     "AAPL");
@@ -57,22 +65,44 @@ public class StockDataModule {
         logChainStatus();
         for (Map.Entry<String, String> s : SYMBOLS.entrySet()) {
             String name = displayName(s.getKey());
-            List<PricePoint> history = fetchWithChain(s.getValue());
-
+            List<PricePoint> history = loadHistory(name, s.getValue());
             if (!history.isEmpty()) {
                 stockMap.put(s.getKey(), new Stock(name, history));
-                persistPriceToDB(name, history.get(history.size() - 1).close());
+                continue;
+            }
+            Optional<Double> cached = tryCache(() -> cache.loadPrice(name), Optional.empty());
+            if (cached.isPresent()) {
+                stockMap.put(s.getKey(), new Stock(name, List.of(new PricePoint(LocalDate.now(), cached.get()))));
+                log.warn("{}: no history from providers or cache, using last recorded price ${}", name, cached.get());
             } else {
-                double cached = loadPriceFromDB(name);
-                if (cached > 0) {
-                    stockMap.put(s.getKey(), new Stock(name, List.of(new PricePoint(LocalDate.now(), cached))));
-                    log.warn("{}: all history providers failed, using DB cache ${}", name, cached);
-                } else {
-                    log.warn("{}: all history providers failed and no DB cache, skipping", name);
-                }
+                log.warn("{}: no history and no recorded price, skipping", name);
             }
         }
         refreshQuotes();
+    }
+
+    /** Fresh cache → providers → stale cache. Empty if all fail. */
+    private List<PricePoint> loadHistory(String name, String symbol) {
+        Optional<Instant> fetchedAt = tryCache(() -> cache.lastFetched(name), Optional.empty());
+        if (fetchedAt.isPresent() && fetchedAt.get().isAfter(Instant.now().minus(CACHE_TTL))) {
+            List<PricePoint> fresh = tryCache(() -> cache.loadHistory(name), List.of());
+            if (!fresh.isEmpty()) {
+                log.info("{}: {} days of history from the DB cache (fetched {})", symbol, fresh.size(), fetchedAt.get());
+                return fresh;
+            }
+        }
+
+        List<PricePoint> fetched = fetchWithChain(symbol);
+        if (!fetched.isEmpty()) {
+            tryCache(() -> { cache.saveHistory(name, fetched); cache.savePrice(name, fetched.get(fetched.size() - 1).close()); return null; }, null);
+            return fetched;
+        }
+
+        List<PricePoint> stale = tryCache(() -> cache.loadHistory(name), List.of());
+        if (!stale.isEmpty()) {
+            log.warn("{}: providers failed, using cached history up to {}", symbol, stale.get(stale.size() - 1).date());
+        }
+        return stale;
     }
 
     /** Updates the live price of every loaded stock. Returns how many were updated. Blocking. */
@@ -96,7 +126,7 @@ public class StockDataModule {
         OptionalDouble quote = quoteFetcher.fetchQuote(SYMBOLS.get(key));
         if (quote.isEmpty()) return false;
         stock.setLivePrice(quote.getAsDouble());
-        persistPriceToDB(stock.getName(), quote.getAsDouble());
+        tryCache(() -> { cache.savePrice(stock.getName(), quote.getAsDouble()); return null; }, null);
         return true;
     }
 
@@ -149,33 +179,18 @@ public class StockDataModule {
     }
 
     // ----------------------------------------------------------------
-    // DB persistence (cache latest price for offline fallback)
+    // DB cache — failures are logged, never fatal (the app works without MySQL data)
     // ----------------------------------------------------------------
 
-    private void persistPriceToDB(String stockName, double price) {
-        String sql = "INSERT INTO stocks (stock_name, current_price) VALUES (?, ?) "
-                   + "ON DUPLICATE KEY UPDATE current_price = VALUES(current_price)";
-        try (Connection conn = DBConnection.get();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, stockName);
-            ps.setBigDecimal(2, BigDecimal.valueOf(price));
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            log.warn("Could not persist price for {}: {}", stockName, e.getMessage());
-        }
-    }
+    @FunctionalInterface
+    private interface CacheCall<T> { T call() throws SQLException; }
 
-    private double loadPriceFromDB(String stockName) {
-        String sql = "SELECT current_price FROM stocks WHERE stock_name = ?";
-        try (Connection conn = DBConnection.get();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, stockName);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return rs.getBigDecimal("current_price").doubleValue();
-            }
+    private static <T> T tryCache(CacheCall<T> call, T fallback) {
+        try {
+            return call.call();
         } catch (SQLException e) {
-            log.warn("Could not load cached price for {}: {}", stockName, e.getMessage());
+            log.warn("Price cache unavailable: {}", e.getMessage());
+            return fallback;
         }
-        return -1;
     }
 }

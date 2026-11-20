@@ -41,6 +41,8 @@ abstract class DbTestSupport {
             s.executeUpdate("DELETE FROM portfolio");
             s.executeUpdate("DELETE FROM users");
             s.executeUpdate("DELETE FROM stocks");
+            s.executeUpdate("DELETE FROM price_history");
+            s.executeUpdate("DELETE FROM history_fetch_log");
         }
     }
 

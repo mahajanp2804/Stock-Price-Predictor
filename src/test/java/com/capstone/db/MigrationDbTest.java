@@ -15,7 +15,7 @@ class MigrationDbTest extends DbTestSupport {
     @Test
     @DisplayName("a fresh database is migrated to the latest schema with DECIMAL money")
     void freshSchema() throws Exception {
-        assertEquals("2", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
+        assertEquals("3", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
         assertEquals("decimal(15,2)", columnType("users", "balance"));
         assertEquals("decimal(15,4)", columnType("portfolio", "avg_price"));
     }
