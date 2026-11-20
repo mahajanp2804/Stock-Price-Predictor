@@ -1,12 +1,14 @@
 package com.capstone.data;
 
 import com.capstone.db.DBConnection;
+import com.capstone.model.PricePoint;
 import com.capstone.model.Stock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.sql.*;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -55,15 +57,15 @@ public class StockDataModule {
         logChainStatus();
         for (Map.Entry<String, String> s : SYMBOLS.entrySet()) {
             String name = displayName(s.getKey());
-            List<Double> history = fetchWithChain(s.getValue());
+            List<PricePoint> history = fetchWithChain(s.getValue());
 
             if (!history.isEmpty()) {
                 stockMap.put(s.getKey(), new Stock(name, history));
-                persistPriceToDB(name, history.get(history.size() - 1));
+                persistPriceToDB(name, history.get(history.size() - 1).close());
             } else {
                 double cached = loadPriceFromDB(name);
                 if (cached > 0) {
-                    stockMap.put(s.getKey(), new Stock(name, List.of(cached)));
+                    stockMap.put(s.getKey(), new Stock(name, List.of(new PricePoint(LocalDate.now(), cached))));
                     log.warn("{}: all history providers failed, using DB cache ${}", name, cached);
                 } else {
                     log.warn("{}: all history providers failed and no DB cache, skipping", name);
@@ -98,10 +100,10 @@ public class StockDataModule {
         return true;
     }
 
-    private List<Double> fetchWithChain(String symbol) {
+    private List<PricePoint> fetchWithChain(String symbol) {
         for (StockFetcher fetcher : chain) {
             if (!fetcher.isConfigured()) continue;
-            List<Double> result = fetcher.fetchHistory(symbol);
+            List<PricePoint> result = fetcher.fetchHistory(symbol);
             if (!result.isEmpty()) {
                 log.info("{}: {} days of history from {}", symbol, result.size(), fetcher.providerName());
                 return result;

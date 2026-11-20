@@ -4,6 +4,9 @@ import java.util.*;
 
 public class PredictionModule {
 
+    /** How many of the most recent closes the price forecast is fitted to. */
+    public static final int MODEL_WINDOW = 30;
+
     public static String predictTrend(List<Double> prices) {
         if (prices == null || prices.size() < 2) return "Insufficient data";
         if (prices.size() >= 20) {
@@ -20,8 +23,10 @@ public class PredictionModule {
         }
     }
 
-    public static List<Double> predictFuturePrices(List<Double> prices, int daysAhead) {
-        if (prices == null || prices.isEmpty() || daysAhead <= 0) return new ArrayList<>();
+    /** Forecasts daysAhead closes from the last MODEL_WINDOW closes of prices. */
+    public static List<Double> predictFuturePrices(List<Double> allPrices, int daysAhead) {
+        if (allPrices == null || allPrices.isEmpty() || daysAhead <= 0) return new ArrayList<>();
+        List<Double> prices = allPrices.subList(Math.max(0, allPrices.size() - MODEL_WINDOW), allPrices.size());
         int n = prices.size();
         double xMean = (n + 1) / 2.0;
         double yMean = prices.stream().mapToDouble(Double::doubleValue).average().orElse(0);

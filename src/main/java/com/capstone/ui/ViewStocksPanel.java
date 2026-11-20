@@ -7,9 +7,10 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
+import java.util.OptionalDouble;
 
 /** "View Stocks" tab: latest price, 30-day change and how fresh each price is. */
 class ViewStocksPanel extends JPanel {
@@ -35,10 +36,9 @@ class ViewStocksPanel extends JPanel {
             Stock stock = stocks.getStockByName(name);
             if (stock == null) continue;
             double latest = stock.getLatestPrice();
-            List<Double> history = stock.getPriceHistory();
-            double first  = history.get(0);
-            // Only one price means history providers failed and this is the DB cache
-            String change = history.size() < 2 || first == 0 ? "n/a" : String.format("%+.2f%%", (latest - first) / first * 100);
+            // Empty when only a cached price is available (history providers failed)
+            OptionalDouble pct = stock.percentChangeSince(LocalDate.now().minusDays(30));
+            String change = pct.isPresent() ? String.format("%+.2f%%", pct.getAsDouble()) : "n/a";
             Instant asOf  = stock.getLiveUpdatedAt();
             model.addRow(new Object[]{name, String.format("$%.2f", latest), change,
                 asOf == null ? "Last close" : "Live " + TIME.format(asOf)});

@@ -3,6 +3,9 @@ package com.capstone.data;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.capstone.model.PricePoint;
+
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,13 +27,16 @@ class ProviderParsingTest {
     }
 
     @Test
-    @DisplayName("Twelve Data: newest-first values are returned oldest-first")
+    @DisplayName("Twelve Data: newest-first values are returned oldest-first, with dates")
     void twelveData() {
         String json = "{\"meta\":{\"symbol\":\"AAPL\"},\"values\":["
             + "{\"datetime\":\"2026-11-02\",\"close\":\"338.32\"},"
             + "{\"datetime\":\"2026-10-30\",\"close\":\"344.63\"},"
             + "{\"datetime\":\"2026-10-29\",\"close\":\"340.10\"}],\"status\":\"ok\"}";
-        assertEquals(List.of(340.10, 344.63, 338.32), TwelvedataFetcher.parseHistory(json));
+        assertEquals(List.of(
+            new PricePoint(LocalDate.of(2026, 10, 29), 340.10),
+            new PricePoint(LocalDate.of(2026, 10, 30), 344.63),
+            new PricePoint(LocalDate.of(2026, 11, 2), 338.32)), TwelvedataFetcher.parseHistory(json));
     }
 
     @Test
@@ -40,18 +46,16 @@ class ProviderParsingTest {
     }
 
     @Test
-    @DisplayName("Alpha Vantage: dates sorted ascending, capped at 30 days")
+    @DisplayName("Alpha Vantage: every day returned, sorted by date ascending")
     void alphaVantage() {
-        StringBuilder sb = new StringBuilder("{\"Time Series (Daily)\":{");
-        for (int d = 1; d <= 35; d++) {
-            if (d > 1) sb.append(',');
-            sb.append(String.format("\"2026-10-%02d\":{\"4. close\":\"%d.0\"}", d, 100 + d));
-        }
-        sb.append("}}");
-        List<Double> h = AlphavantageFetcher.parseHistory(sb.toString().replace("2026-10-3", "2026-11-0"));
-        assertEquals(30, h.size());
-        assertEquals(106.0, h.get(0));
-        assertEquals(135.0, h.get(29));
+        String json = "{\"Time Series (Daily)\":{"
+            + "\"2026-11-02\":{\"4. close\":\"338.32\"},"
+            + "\"2026-10-29\":{\"4. close\":\"340.10\"},"
+            + "\"2026-10-30\":{\"4. close\":\"344.63\"}}}";
+        List<PricePoint> h = AlphavantageFetcher.parseHistory(json);
+        assertEquals(3, h.size());
+        assertEquals(new PricePoint(LocalDate.of(2026, 10, 29), 340.10), h.get(0));
+        assertEquals(new PricePoint(LocalDate.of(2026, 11, 2), 338.32), h.get(2));
     }
 
     @Test

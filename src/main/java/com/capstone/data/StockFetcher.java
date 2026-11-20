@@ -1,5 +1,7 @@
 package com.capstone.data;
 
+import com.capstone.model.PricePoint;
+
 import java.util.List;
 
 /**
@@ -19,9 +21,9 @@ public interface StockFetcher {
     boolean isConfigured();
 
     /**
-     * Fetches daily closing price history for the given ticker symbol.
-     * Returns prices in chronological order (oldest first).
+     * Fetches dated daily closing prices for the given ticker symbol,
+     * in chronological order (oldest first).
      * Returns an empty list on any error — never throws.
      */
-    List<Double> fetchHistory(String symbol);
+    List<PricePoint> fetchHistory(String symbol);
 }

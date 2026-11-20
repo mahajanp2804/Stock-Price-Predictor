@@ -40,6 +40,15 @@ class PredictionModuleTest {
     // ----------------------------------------------------------------
 
     @Test
+    @DisplayName("futurePrices: only the last MODEL_WINDOW closes are used")
+    void futurePrices_usesRecentWindowOnly() {
+        List<Double> recent = risingPrices(PredictionModule.MODEL_WINDOW, 100, 1);
+        List<Double> longHistory = new ArrayList<>(fallingPrices(200, 500, 2));   // old, unrelated trend
+        longHistory.addAll(recent);
+        assertEquals(PredictionModule.predictFuturePrices(recent, 5), PredictionModule.predictFuturePrices(longHistory, 5));
+    }
+
+    @Test
     @DisplayName("predictFuturePrices: returns correct number of results")
     void futurePrices_returnsCorrectCount() {
         List<Double> prices = risingPrices(10, 100, 1);
