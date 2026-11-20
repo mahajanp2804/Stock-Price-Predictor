@@ -8,13 +8,13 @@ A Java desktop app for **paper trading** and **short-term price forecasting**. L
 
 ## Features
 
-- **Live prices** for Apple, Microsoft, Amazon, Google and Tesla. Finnhub quotes refresh every minute and again right before each trade. Daily price history (used for predictions) comes from Twelve Data, falling back to Alpha Vantage, and then to the last price saved in MySQL.
+- **Live prices** for Apple, Microsoft, Amazon, Google and Tesla. Finnhub quotes refresh every minute and again right before each trade. About 14 months of daily price history comes from Twelve Data (falling back to Alpha Vantage) and is cached in MySQL, so restarts don't re-download it and the app still works when providers are down.
 - **Accounts:** register and log in. Passwords are hashed with standard bcrypt (cost 12).
 - **Paper trading:** buy and sell against a virtual balance. Money is exact (`DECIMAL` / `BigDecimal`), and each trade locks the user's balance inside one database transaction, so simultaneous trades can't overspend.
 - **Responsive UI:** all database and network work runs in the background.
 - **Portfolio:** holdings with average cost, market value and unrealised P&L.
 - **Transaction history**, with CSV export of the portfolio and of transactions.
-- **Price prediction:** linear regression adjusted by EMA and RSI, forecasting N days ahead.
+- **Honest price prediction:** before forecasting, every model is backtested on the stock's own history and compared with simply assuming the price stays the same. The most accurate one is used, and each forecast comes with an 80% range based on that model's real past errors.
 - **Trend analysis:** 5-day vs 20-day moving-average crossover (Strong Uptrend … Strong Downtrend).
 - **Light and dark themes** (FlatLaf).
 
@@ -85,11 +85,11 @@ CI runs all tests, including the database tests, against MySQL 8.4 on every push
 ├── config.example.properties   # config template (copy to config.properties)
 ├── pom.xml
 └── src
-    ├── main/java/com/capstone
+    ├── main/java/com/capstone   # BacktestReport: command-line model comparison
     │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes (Finnhub)
     │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading logic
     │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
-    │   ├── prediction/  # regression, SMA/EMA/RSI, trend detection
+    │   ├── prediction/  # forecasting models, walk-forward backtester, indicators
     │   └── ui/          # main window, one class per tab, login dialog, CSV export
     ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
     └── test/java/com/capstone         # unit tests + database tests (*DbTest)
@@ -97,11 +97,53 @@ CI runs all tests, including the database tests, against MySQL 8.4 on every push
 
 ## How the prediction works
 
-1. Fit a least-squares line to the recent closing prices.
-2. Nudge the projection toward the 14-day EMA. The nudge fades the further ahead the forecast goes.
-3. Apply a small mean-reversion factor when RSI shows the stock is overbought (> 70) or oversold (< 30).
+The app compares three ways of forecasting a stock's closing price N trading days ahead:
 
-The trend label compares the 5-day and 20-day simple moving averages. When fewer than 20 prices are available, it uses the overall percentage change instead.
+| Model | What it predicts |
+|---|---|
+| **Today's price** | No change: every future day equals the latest close. This is the standard baseline for stock prices. |
+| **Average drift** | The average daily change of the last 30 closes continues. |
+| **Regression + EMA + RSI** | The app's original model: a least-squares line through the last 30 closes, nudged toward the 14-day EMA and damped when RSI says overbought (> 70) or oversold (< 30). |
+
+### Walk-forward backtest
+
+For every past day in the history, each model forecasts using **only the prices known on that day**. The forecast is then compared with what actually happened. With about 300 days of history, that's roughly 270 scored forecasts per stock. For each model the app reports:
+
+- **Average error:** in dollars and as a percent of the price.
+- **Up/down right:** how often it called the direction correctly. 50% is a coin flip.
+- **80% range:** the 10th to 90th percentile of its past errors for each day ahead.
+
+The Predict Prices tab runs this backtest for the selected stock, forecasts with the most accurate model (or one you pick), and shows the range.
+
+### Results
+
+Data from 2025-09-15 to 2026-11-20. Each cell is the average error as a percent of the price, then how often the model called up or down correctly. Bold marks the most accurate model.
+
+| Stock | 1 day: Today's price | 1 day: Average drift | 1 day: Regression + EMA + RSI | 5 days: Today's price | 5 days: Average drift | 5 days: Regression + EMA + RSI |
+|---|---|---|---|---|---|---|
+| Apple | **1.10%** | 1.12%, 47% | 2.44%, 50% | **2.64%** | 2.88%, 43% | 3.85%, 41% |
+| Microsoft | **1.45%** | 1.49%, 52% | 3.08%, 50% | **3.47%** | 3.88%, 48% | 5.11%, 49% |
+| Amazon | **1.58%** | 1.63%, 46% | 3.26%, 50% | **3.71%** | 4.37%, 39% | 5.43%, 46% |
+| Google | **1.50%** | 1.55%, 50% | 3.25%, 50% | **3.71%** | 4.17%, 52% | 4.99%, 52% |
+| Tesla | **2.23%** | 2.29%, 47% | 3.79%, 54% | **4.73%** | 5.27%, 47% | 5.92%, 55% |
+
+What this shows:
+
+- **No model beat "today's price"** for any stock, one day or five days ahead. That's expected: daily stock prices behave close to a random walk, so simple patterns in past prices don't predict them.
+- **The original Regression + EMA + RSI model is about twice as wrong as "today's price" one day ahead.** Its forecast isn't anchored to the latest price: it snaps back toward the 30-day trend line and the lagging EMA. On a steady uptrend, the RSI "overbought" damping pulls it down further (there's a unit test documenting this).
+- **Up/down calls land between 39% and 55%**, about a coin flip.
+- The useful output is the **80% range**: a realistic idea of how far the price might move. For example, in 80% of past cases, Apple's price five trading days later was between 3.2% below and 3.7% above where it started.
+
+To reproduce these tables with the latest data:
+
+```bash
+mvn clean package -DskipTests
+java -cp target/stock-trading-app.jar com.capstone.BacktestReport 1 5
+```
+
+### Trend label
+
+The Predict Trend tab compares the 5-day and 20-day simple moving averages (Strong Uptrend … Strong Downtrend). It describes recent movement; it isn't a forecast.
 
 ## Roadmap
 
@@ -109,5 +151,5 @@ The trend label compares the 5-day and 20-day simple moving averages. When fewer
 - [x] Standard Maven layout, runnable jar, CI
 - [x] Exact money arithmetic, locked balance updates, responsive UI, live price refresh, standard bcrypt, SLF4J logging
 - [x] Database tests in CI, Flyway migrations, GUI split into one class per tab
-- [ ] Backtest the predictor against a "tomorrow = today" baseline (MAE, RMSE, directional accuracy)
+- [x] 14 months of cached price history, walk-forward backtest against a "price stays the same" baseline, forecast ranges
 - [ ] Any-ticker search, price charts, watchlist
