@@ -49,7 +49,7 @@ class PredictPricesPanel extends JPanel {
             try { days = Integer.parseInt(daysField.getText().trim()); }
             catch (NumberFormatException ex) { Ui.showError(ctx.frame(), "Please enter a valid whole number for days."); return; }
             if (days < 1 || days > MAX_DAYS_AHEAD) { Ui.showError(ctx.frame(), "Days ahead must be between 1 and " + MAX_DAYS_AHEAD + "."); return; }
-            Stock stock = ctx.stocks().getStockByName(name);
+            Stock stock = ctx.stocks().getStock(name);
             if (stock == null) { Ui.showError(ctx.frame(), "Stock data unavailable."); return; }
             resultArea.setText(report(stock, days, (String) modelCombo.getSelectedItem()));
             resultArea.setCaretPosition(0);
@@ -60,8 +60,8 @@ class PredictPricesPanel extends JPanel {
         List<PricePoint> history = stock.getHistory();
         List<Double> closes = stock.getPriceHistory();
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("%s — %d trading days of closes, %s to %s%n%n",
-            stock.getName(), history.size(), history.get(0).date(), history.get(history.size() - 1).date()));
+        sb.append(String.format("%s (%s) — %d trading days of closes, %s to %s%n%n",
+            stock.getSymbol(), stock.getName(), history.size(), history.get(0).date(), history.get(history.size() - 1).date()));
 
         List<BacktestResult> results = Backtester.compareAll(closes, days);
         BacktestResult baseline = results.get(0);   // Forecasters.ALL starts with today's price

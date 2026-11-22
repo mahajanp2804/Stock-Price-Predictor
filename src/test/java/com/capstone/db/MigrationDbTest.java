@@ -15,7 +15,7 @@ class MigrationDbTest extends DbTestSupport {
     @Test
     @DisplayName("a fresh database is migrated to the latest schema with DECIMAL money")
     void freshSchema() throws Exception {
-        assertEquals("3", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
+        assertEquals("4", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
         assertEquals("decimal(15,2)", columnType("users", "balance"));
         assertEquals("decimal(15,4)", columnType("portfolio", "avg_price"));
     }
@@ -45,6 +45,10 @@ class MigrationDbTest extends DbTestSupport {
         assertEquals("decimal(15,2)", columnType("users", "balance"));
         assertEquals("BASELINE", scalar("SELECT type FROM flyway_schema_history WHERE version = '1'"));
         assertEquals("1", scalar("SELECT success FROM flyway_schema_history WHERE version = '2'"));
+        // V4: the old display name became the ticker symbol, with its company name
+        assertEquals("AAPL", scalar("SELECT stock_name FROM stocks"));
+        assertEquals("Apple Inc", scalar("SELECT company_name FROM stocks"));
+        assertEquals("AAPL", scalar("SELECT s.stock_name FROM portfolio p JOIN stocks s ON p.stock_id = s.id"));
     }
 
     @AfterEach

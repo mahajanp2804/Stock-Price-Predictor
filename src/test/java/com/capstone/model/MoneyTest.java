@@ -50,7 +50,7 @@ class MoneyTest {
     @Test
     @DisplayName("stock prefers the live quote over the last close")
     void stockLivePrice() {
-        Stock s = new Stock("Apple", java.util.List.of(
+        Stock s = new Stock("AAPL", "Apple Inc", java.util.List.of(
             new PricePoint(java.time.LocalDate.of(2026, 11, 2), 100.0), new PricePoint(java.time.LocalDate.of(2026, 11, 3), 101.0)));
         assertEquals(101.0, s.getLatestPrice());
         assertNull(s.getLiveUpdatedAt());

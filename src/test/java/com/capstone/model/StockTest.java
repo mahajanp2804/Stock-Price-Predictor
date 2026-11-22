@@ -17,7 +17,7 @@ class StockTest {
     private static Stock daily(int days) {
         List<PricePoint> h = new ArrayList<>();
         for (int i = 0; i < days; i++) h.add(new PricePoint(START.plusDays(i), 100 + i));
-        return new Stock("Test", h);
+        return new Stock("TEST", "Test Corp", h);
     }
 
     @Test
@@ -40,7 +40,7 @@ class StockTest {
     @DisplayName("no change when history doesn't go back far enough or is a single cached price")
     void changeUnavailable() {
         assertTrue(daily(10).percentChangeSince(START.minusDays(1)).isEmpty());
-        assertTrue(new Stock("Cached", List.of(new PricePoint(START, 100))).percentChangeSince(START).isEmpty());
+        assertTrue(new Stock("CCH", "Cached Corp", List.of(new PricePoint(START, 100))).percentChangeSince(START).isEmpty());
     }
 
     @Test

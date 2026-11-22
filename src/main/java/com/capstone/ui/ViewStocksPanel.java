@@ -18,13 +18,13 @@ class ViewStocksPanel extends JPanel {
     static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private final StockDataModule stocks;
-    private final DefaultTableModel model = Ui.readOnlyModel("Stock", "Latest Price", "30-Day Change", "Price As Of");
+    private final DefaultTableModel model = Ui.readOnlyModel("Symbol", "Company", "Latest Price", "30-Day Change", "Price As Of");
 
     ViewStocksPanel(AppContext ctx) {
         super(new BorderLayout());
         this.stocks = ctx.stocks();
         JTable table = Ui.table(model);
-        table.getColumnModel().getColumn(2).setCellRenderer(Ui.pnlRenderer());
+        table.getColumnModel().getColumn(3).setCellRenderer(Ui.pnlRenderer());
         add(new JScrollPane(table), BorderLayout.CENTER);
         refresh();
     }
@@ -32,15 +32,15 @@ class ViewStocksPanel extends JPanel {
     /** Re-reads prices from the data module (no I/O). Call on the UI thread. */
     void refresh() {
         model.setRowCount(0);
-        for (String name : stocks.getAllStockNames()) {
-            Stock stock = stocks.getStockByName(name);
+        for (String symbol : stocks.getSymbols()) {
+            Stock stock = stocks.getStock(symbol);
             if (stock == null) continue;
             double latest = stock.getLatestPrice();
             // Empty when only a cached price is available (history providers failed)
             OptionalDouble pct = stock.percentChangeSince(LocalDate.now().minusDays(30));
             String change = pct.isPresent() ? String.format("%+.2f%%", pct.getAsDouble()) : "n/a";
             Instant asOf  = stock.getLiveUpdatedAt();
-            model.addRow(new Object[]{name, String.format("$%.2f", latest), change,
+            model.addRow(new Object[]{symbol, stock.getName(), String.format("$%.2f", latest), change,
                 asOf == null ? "Last close" : "Live " + TIME.format(asOf)});
         }
     }

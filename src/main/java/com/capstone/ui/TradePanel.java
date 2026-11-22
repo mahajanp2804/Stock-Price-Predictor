@@ -37,7 +37,7 @@ class TradePanel extends JPanel {
             resultLabel.setText("Getting latest price…");
             UiTasks.run(() -> {
                     boolean fresh = ctx.stocks().refreshQuote(name);
-                    Stock stock = ctx.stocks().getStockByName(name);
+                    Stock stock = ctx.stocks().getStock(name);
                     if (stock == null) return "Stock data not available for " + name;
                     double price = stock.getLatestPrice();
                     String msg = isBuy ? ctx.portfolio().buyStock(ctx.userId(), name, qty, price)

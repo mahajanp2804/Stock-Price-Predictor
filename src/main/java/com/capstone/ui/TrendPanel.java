@@ -25,7 +25,7 @@ class TrendPanel extends JPanel {
 
         predictBtn.addActionListener(e -> {
             String name = (String) stockCombo.getSelectedItem(); if (name == null) return;
-            Stock stock = ctx.stocks().getStockByName(name);
+            Stock stock = ctx.stocks().getStock(name);
             if (stock == null) { Ui.showError(ctx.frame(), "Stock data unavailable."); return; }
             String trend = PredictionModule.predictTrend(stock.getPriceHistory());
             resultLabel.setText(name + ": " + trend);

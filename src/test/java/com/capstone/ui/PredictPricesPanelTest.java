@@ -18,7 +18,7 @@ class PredictPricesPanelTest {
         List<PricePoint> h = new ArrayList<>();
         LocalDate d = LocalDate.of(2026, 1, 1);
         for (double c : closes) { h.add(new PricePoint(d, c)); d = d.plusDays(1); }
-        return new Stock("Test", h);
+        return new Stock("TEST", "Test Corp", h);
     }
 
     @Test

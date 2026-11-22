@@ -21,7 +21,7 @@ final class Ui {
     }
 
     static JComboBox<String> stockCombo(StockDataModule stocks) {
-        return new JComboBox<>(stocks.getAllStockNames().toArray(new String[0]));
+        return new JComboBox<>(stocks.getSymbols().toArray(new String[0]));
     }
 
     static DefaultTableModel readOnlyModel(String... columns) {

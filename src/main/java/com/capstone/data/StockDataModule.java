@@ -47,45 +47,54 @@ public class StockDataModule {
     /** Cached history younger than this is used without calling a provider. */
     static final Duration CACHE_TTL = Duration.ofHours(6);
 
-    private static final Map<String, String> SYMBOLS = new LinkedHashMap<>();
+    /** Ticker → company name of the stocks every user starts with. */
+    public static final Map<String, String> DEFAULT_STOCKS = new LinkedHashMap<>();
     static {
-        SYMBOLS.put("apple",     "AAPL");
-        SYMBOLS.put("microsoft", "MSFT");
-        SYMBOLS.put("amazon",    "AMZN");
-        SYMBOLS.put("google",    "GOOGL");
-        SYMBOLS.put("tesla",     "TSLA");
+        DEFAULT_STOCKS.put("AAPL",  "Apple Inc");
+        DEFAULT_STOCKS.put("MSFT",  "Microsoft Corp");
+        DEFAULT_STOCKS.put("AMZN",  "Amazon.com Inc");
+        DEFAULT_STOCKS.put("GOOGL", "Alphabet Inc Class A");
+        DEFAULT_STOCKS.put("TSLA",  "Tesla Inc");
     }
 
     // ----------------------------------------------------------------
     // Loading
     // ----------------------------------------------------------------
 
-    /** Loads history for every stock, then live quotes. Blocking. */
+    /** Loads history for the default stocks, then live quotes. Blocking. */
     public void loadAll() {
+        loadAll(DEFAULT_STOCKS);
+    }
+
+    /** Loads history for each ticker → company name, then live quotes. Blocking. */
+    public void loadAll(Map<String, String> stocks) {
         logChainStatus();
-        for (Map.Entry<String, String> s : SYMBOLS.entrySet()) {
-            String name = displayName(s.getKey());
-            List<PricePoint> history = loadHistory(name, s.getValue());
-            if (!history.isEmpty()) {
-                stockMap.put(s.getKey(), new Stock(name, history));
-                continue;
-            }
-            Optional<Double> cached = tryCache(() -> cache.loadPrice(name), Optional.empty());
-            if (cached.isPresent()) {
-                stockMap.put(s.getKey(), new Stock(name, List.of(new PricePoint(LocalDate.now(), cached.get()))));
-                log.warn("{}: no history from providers or cache, using last recorded price ${}", name, cached.get());
-            } else {
-                log.warn("{}: no history and no recorded price, skipping", name);
-            }
-        }
+        for (Map.Entry<String, String> s : stocks.entrySet()) load(s.getKey(), s.getValue());
         refreshQuotes();
     }
 
+    /** Loads one stock's history (no live quote). Returns false if no price at all could be found. Blocking. */
+    public boolean load(String symbol, String companyName) {
+        List<PricePoint> history = loadHistory(symbol);
+        if (!history.isEmpty()) {
+            stockMap.put(symbol, new Stock(symbol, companyName, history));
+            return true;
+        }
+        Optional<Double> cached = tryCache(() -> cache.loadPrice(symbol), Optional.empty());
+        if (cached.isPresent()) {
+            stockMap.put(symbol, new Stock(symbol, companyName, List.of(new PricePoint(LocalDate.now(), cached.get()))));
+            log.warn("{}: no history from providers or cache, using last recorded price ${}", symbol, cached.get());
+            return true;
+        }
+        log.warn("{}: no history and no recorded price, skipping", symbol);
+        return false;
+    }
+
     /** Fresh cache → providers → stale cache. Empty if all fail. */
-    private List<PricePoint> loadHistory(String name, String symbol) {
-        Optional<Instant> fetchedAt = tryCache(() -> cache.lastFetched(name), Optional.empty());
+    private List<PricePoint> loadHistory(String symbol) {
+        Optional<Instant> fetchedAt = tryCache(() -> cache.lastFetched(symbol), Optional.empty());
         if (fetchedAt.isPresent() && fetchedAt.get().isAfter(Instant.now().minus(CACHE_TTL))) {
-            List<PricePoint> fresh = tryCache(() -> cache.loadHistory(name), List.of());
+            List<PricePoint> fresh = tryCache(() -> cache.loadHistory(symbol), List.of());
             if (!fresh.isEmpty()) {
                 log.info("{}: {} days of history from the DB cache (fetched {})", symbol, fresh.size(), fetchedAt.get());
                 return fresh;
@@ -94,11 +103,11 @@ public class StockDataModule {
 
         List<PricePoint> fetched = fetchWithChain(symbol);
         if (!fetched.isEmpty()) {
-            tryCache(() -> { cache.saveHistory(name, fetched); cache.savePrice(name, fetched.get(fetched.size() - 1).close()); return null; }, null);
+            tryCache(() -> { cache.saveHistory(symbol, fetched); cache.savePrice(symbol, fetched.get(fetched.size() - 1).close()); return null; }, null);
             return fetched;
         }
 
-        List<PricePoint> stale = tryCache(() -> cache.loadHistory(name), List.of());
+        List<PricePoint> stale = tryCache(() -> cache.loadHistory(symbol), List.of());
         if (!stale.isEmpty()) {
             log.warn("{}: providers failed, using cached history up to {}", symbol, stale.get(stale.size() - 1).date());
         }
@@ -119,14 +128,13 @@ public class StockDataModule {
      * Fetches a fresh live price for one stock, e.g. right before a trade.
      * Returns false if no quote could be fetched (the stock keeps its last known price).
      */
-    public boolean refreshQuote(String name) {
-        String key = name.toLowerCase();
-        Stock stock = stockMap.get(key);
+    public boolean refreshQuote(String symbol) {
+        Stock stock = stockMap.get(symbol);
         if (stock == null || !quoteFetcher.isConfigured()) return false;
-        OptionalDouble quote = quoteFetcher.fetchQuote(SYMBOLS.get(key));
+        OptionalDouble quote = quoteFetcher.fetchQuote(symbol);
         if (quote.isEmpty()) return false;
         stock.setLivePrice(quote.getAsDouble());
-        tryCache(() -> { cache.savePrice(stock.getName(), quote.getAsDouble()); return null; }, null);
+        tryCache(() -> { cache.savePrice(symbol, quote.getAsDouble()); return null; }, null);
         return true;
     }
 
@@ -157,25 +165,21 @@ public class StockDataModule {
     // Accessors
     // ----------------------------------------------------------------
 
-    public Stock getStockByName(String name) { return stockMap.get(name.toLowerCase()); }
+    /** The loaded stock with this ticker, or null. */
+    public Stock getStock(String symbol) { return stockMap.get(symbol); }
 
-    /** Display names (e.g. "Apple") of loaded stocks, sorted. */
-    public List<String> getAllStockNames() {
-        List<String> names = new ArrayList<>();
-        for (Stock s : stockMap.values()) names.add(s.getName());
-        Collections.sort(names);
-        return names;
+    /** Tickers of loaded stocks, sorted. */
+    public List<String> getSymbols() {
+        List<String> symbols = new ArrayList<>(stockMap.keySet());
+        Collections.sort(symbols);
+        return symbols;
     }
 
-    /** Display name → latest price for every loaded stock. */
+    /** Ticker → latest price for every loaded stock. */
     public Map<String, Double> latestPrices() {
         Map<String, Double> prices = new HashMap<>();
-        for (Stock s : stockMap.values()) prices.put(s.getName(), s.getLatestPrice());
+        for (Stock s : stockMap.values()) prices.put(s.getSymbol(), s.getLatestPrice());
         return prices;
-    }
-
-    private static String displayName(String key) {
-        return Character.toUpperCase(key.charAt(0)) + key.substring(1);
     }
 
     // ----------------------------------------------------------------
