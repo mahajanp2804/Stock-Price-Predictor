@@ -1,0 +1,39 @@
+# Runs the web app and MySQL:
+#   cp .env.example .env    # then set passwords and API keys
+#   docker compose up --build
+# Open http://localhost:8080. Data persists in the "mysql-data" volume.
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: stockdb
+      MYSQL_USER: stockapp
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/stockdb
+      DB_USER: stockapp
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      FINNHUB_KEY: ${FINNHUB_KEY:-}
+      TWELVEDATA_KEY: ${TWELVEDATA_KEY:-}
+      ALPHAVANTAGE_KEY: ${ALPHAVANTAGE_KEY:-}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

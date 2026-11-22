@@ -15,3 +15,6 @@ cp.txt
 .classpath
 .project
 .settings/
+
+# Docker Compose secrets — copy .env.example to .env
+.env

@@ -43,3 +43,44 @@ jobs:
         with:
           name: stock-trading-app
           path: desktop/target/stock-trading-app.jar
+
+  # Builds the Docker image, starts the app with MySQL via docker compose,
+  # and checks that it serves the UI and the API end to end
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start app and MySQL
+        run: |
+          printf 'MYSQL_ROOT_PASSWORD=ci-root-pw\nMYSQL_PASSWORD=ci-app-pw\n' > .env
+          docker compose up -d --build
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/api/health; then echo; exit 0; fi
+            sleep 3
+          done
+          docker compose logs web
+          exit 1
+
+      - name: Smoke test
+        run: |
+          set -e
+          curl -sf http://localhost:8080/ | grep -q '<title>Stock Price Predictor</title>'
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            -d '{"username":"ci-user","password":"ci-password"}' http://localhost:8080/api/auth/register
+          TOKEN=$(curl -sf -X POST -H 'Content-Type: application/json' \
+            -d '{"username":"ci-user","password":"ci-password"}' http://localhost:8080/api/auth/login | jq -r .token)
+          curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/me | jq -e '.balance == 10000'
+          curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/watchlist | jq -e 'length == 5'
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
