@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/mahajanp2804/Stock-Price-Predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/mahajanp2804/Stock-Price-Predictor/actions/workflows/ci.yml)
 
-A Java desktop app for **paper trading** and **short-term price forecasting**. Log in, start with a virtual $10,000, buy and sell real stocks at live market prices, track profit and loss, and see a simple forecast of where each stock may be heading.
+A Java app for **paper trading** and **short-term price forecasting**, as a **web app** (Spring Boot + browser UI) and a **desktop app** (Swing), sharing one core. Log in, start with a virtual $10,000, buy and sell real stocks at live market prices, track profit and loss, and see forecasts that have been tested against what actually happened.
+
+![Web app: watchlist with live prices, and a 3-month AAPL chart with the 10-day forecast range](docs/web-app.jpg)
 
 > **Disclaimer:** This is an educational project. Forecasts come from simple statistical indicators. They are not financial advice.
 
@@ -18,11 +20,12 @@ A Java desktop app for **paper trading** and **short-term price forecasting**. L
 - **Transaction history**, with CSV export of the portfolio and of transactions.
 - **Honest price prediction:** before forecasting, every model is backtested on the stock's own history and compared with simply assuming the price stays the same. The most accurate one is used, and each forecast comes with an 80% range based on that model's real past errors.
 - **Trend analysis:** 5-day vs 20-day moving-average crossover (Strong Uptrend … Strong Downtrend).
-- **Light and dark themes** (FlatLaf).
+- **Two front ends, one core:** a browser UI backed by a REST API, and a Swing desktop app. Both use the same database, trading rules and models.
+- **Light and dark themes:** the web UI follows the system setting; the desktop app has a toggle (FlatLaf).
 
 ## Tech stack
 
-Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · bcrypt (at.favre.lib) · SLF4J · org.json · JUnit 5 · Maven
+Java 17 · Spring Boot 4 · Swing + FlatLaf · MySQL 8 + HikariCP + Flyway · bcrypt (at.favre.lib) · SLF4J · JUnit 5 · Maven (multi-module) · Docker Compose · GitHub Actions
 
 ## Getting started
 
@@ -54,10 +57,32 @@ You can set any value as an environment variable instead, and it takes priority 
 
 ```bash
 mvn clean package
+```
+
+**Web app** — then open http://localhost:8080:
+
+```bash
+java -jar web/target/stock-trading-web.jar
+```
+
+**Desktop app:**
+
+```bash
 java -jar desktop/target/stock-trading-app.jar
 ```
 
-Run it from the project root so it finds `config.properties`.
+Run either from the project root so it finds `config.properties`. The web app's port can be changed with the `PORT` environment variable.
+
+### Or: run the web app with Docker
+
+Needs only Docker — no Java, Maven or MySQL install:
+
+```bash
+cp .env.example .env    # set the two passwords and your API keys
+docker compose up --build
+```
+
+Then open http://localhost:8080. MySQL runs in its own container with its data in a named volume; `docker compose down -v` removes everything.
 
 **The database sets itself up.** With the default `db.url` (`…/stockdb?createDatabaseIfNotExist=true`), MySQL creates `stockdb` and [Flyway](https://flywaydb.org) applies the schema migrations in `core/src/main/resources/db/migration` on first connect.
 
@@ -75,7 +100,7 @@ The database tests (`*DbTest`) run only when `TEST_DB_URL` points at a MySQL ser
 TEST_DB_URL='jdbc:mysql://127.0.0.1:3306/stockdb_test?createDatabaseIfNotExist=true' TEST_DB_USER=root TEST_DB_PASSWORD=yourpassword mvn test
 ```
 
-CI runs all tests, including the database tests, against MySQL 8.4 on every push.
+CI runs all tests, including the database and web API tests, against MySQL 8.4 on every push, then builds the Docker image and smoke-tests the running app.
 
 ## Project structure
 
@@ -91,11 +116,41 @@ CI runs all tests, including the database tests, against MySQL 8.4 on every push
 │       │   └── prediction/  # forecasting models, walk-forward backtester, indicators
 │       ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
 │       └── test/                          # unit tests + database tests (*DbTest)
-└── desktop/                    # Swing app → desktop/target/stock-trading-app.jar
-    └── src
-        ├── main/java/com/capstone/ui   # main window, one class per tab, price chart, add-stock search, login, CSV export
-        └── test/                       # UI logic tests
+├── desktop/                    # Swing app → desktop/target/stock-trading-app.jar
+│   └── src
+│       ├── main/java/com/capstone/ui   # main window, one class per tab, price chart, add-stock search, login, CSV export
+│       └── test/                       # UI logic tests
+├── web/                        # Spring Boot app → web/target/stock-trading-web.jar
+│   └── src
+│       ├── main/java/com/capstone/web  # REST controllers, bearer-token sessions, security headers
+│       ├── main/resources/static/      # browser UI (HTML, CSS, JS — no build step)
+│       └── test/                       # API tests over HTTP against a real database
+├── Dockerfile                  # builds and runs the web app
+└── docker-compose.yml          # web app + MySQL
 ```
+
+## REST API
+
+All routes return JSON. Except for register, login and health, they need `Authorization: Bearer <token>` from `/api/auth/login`. Errors look like `{"error": "..."}`.
+
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/api/auth/register` | Create an account: `{"username", "password"}` |
+| `POST` | `/api/auth/login` | Returns `{"token", "username"}` (token valid 12 hours) |
+| `POST` | `/api/auth/logout` | Ends the session |
+| `GET` | `/api/health` | `200` when the database is reachable |
+| `GET` | `/api/me` | Username and cash balance |
+| `GET` | `/api/watchlist` | Your stocks with latest price, 30-day change and quote time |
+| `POST` | `/api/watchlist` | Add a stock: `{"symbol", "name"}` |
+| `DELETE` | `/api/watchlist/{symbol}` | Remove a stock (refused while you hold shares) |
+| `GET` | `/api/search?q=` | Find US stocks and ETFs by ticker or name |
+| `GET` | `/api/stocks/{symbol}/history?period=3M` | Daily closes: `1M`, `3M`, `6M`, `1Y` or `ALL` |
+| `GET` | `/api/stocks/{symbol}/forecast?days=5` | Backtest scores for each model, the most accurate one, and its forecast with 80% ranges (`&model=` to pick one) |
+| `POST` | `/api/trades` | `{"symbol", "side": "BUY" or "SELL", "quantity"}`, executed at a fresh quote; `422` if refused |
+| `GET` | `/api/portfolio` | Holdings with market value and unrealised P&L |
+| `GET` | `/api/transactions` | Trade history, newest first |
+
+Stock routes only serve symbols on your own watchlist, so the shared API allowance can't be spent on arbitrary tickers.
 
 ## How the prediction works
 
@@ -155,4 +210,6 @@ The Predict Trend tab compares the 5-day and 20-day simple moving averages (Stro
 - [x] Database tests in CI, Flyway migrations, GUI split into one class per tab
 - [x] 14 months of cached price history, walk-forward backtest against a "price stays the same" baseline, forecast ranges
 - [x] Stocks identified by ticker, per-user watchlist, search for any US stock or ETF, price charts
+- [x] Core / desktop / web modules, REST API, browser UI, Docker Compose, CI smoke test of the container
 - [ ] Portfolio value over time, realised P&L, limit and stop orders
+- [ ] Public deployment with a demo link
