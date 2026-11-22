@@ -8,7 +8,9 @@ A Java desktop app for **paper trading** and **short-term price forecasting**. L
 
 ## Features
 
-- **Live prices** for Apple, Microsoft, Amazon, Google and Tesla. Finnhub quotes refresh every minute and again right before each trade. About 14 months of daily price history comes from Twelve Data (falling back to Alpha Vantage) and is cached in MySQL, so restarts don't re-download it and the app still works when providers are down.
+- **Any US stock or ETF:** each user has their own watchlist (up to 20). Search by ticker or company name to add one; new accounts start with AAPL, MSFT, AMZN, GOOGL and TSLA.
+- **Price charts:** select a stock to see its daily closes over 1M, 3M, 6M, 1Y or all history, with the price under the mouse and an optional 10-day forecast range.
+- **Live prices:** Finnhub quotes refresh every minute and again right before each trade. About 14 months of daily price history comes from Twelve Data (falling back to Alpha Vantage) and is cached in MySQL, so restarts don't re-download it and the app still works when providers are down. Downloads are paced to Twelve Data's free limit of 8 a minute, so a first start with a long watchlist can take a minute or two.
 - **Accounts:** register and log in. Passwords are hashed with standard bcrypt (cost 12).
 - **Paper trading:** buy and sell against a virtual balance. Money is exact (`DECIMAL` / `BigDecimal`), and each trade locks the user's balance inside one database transaction, so simultaneous trades can't overspend.
 - **Responsive UI:** all database and network work runs in the background.
@@ -29,7 +31,7 @@ Java 17 · Swing + FlatLaf · MySQL 8 + HikariCP · bcrypt (at.favre.lib) · SLF
 - JDK 17 or newer
 - Maven 3.9+
 - MySQL 8 or newer running locally
-- Free API keys: [Twelve Data](https://twelvedata.com) and/or [Alpha Vantage](https://www.alphavantage.co) for price history, and [Finnhub](https://finnhub.io) for live quotes (optional — without it, trades use the last daily close)
+- Free API keys: [Twelve Data](https://twelvedata.com) and/or [Alpha Vantage](https://www.alphavantage.co) for price history, and [Finnhub](https://finnhub.io) for live quotes and stock search (optional — without it, trades use the last daily close and you can't add new stocks)
 
 ### 1. Configure
 
@@ -86,11 +88,11 @@ CI runs all tests, including the database tests, against MySQL 8.4 on every push
 ├── pom.xml
 └── src
     ├── main/java/com/capstone   # BacktestReport: command-line model comparison
-    │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes (Finnhub)
-    │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading logic
+    │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes and symbol search (Finnhub)
+    │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading, watchlist, price cache
     │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
     │   ├── prediction/  # forecasting models, walk-forward backtester, indicators
-    │   └── ui/          # main window, one class per tab, login dialog, CSV export
+    │   └── ui/          # main window, one class per tab, price chart, add-stock search, login, CSV export
     ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
     └── test/java/com/capstone         # unit tests + database tests (*DbTest)
 ```
@@ -152,4 +154,5 @@ The Predict Trend tab compares the 5-day and 20-day simple moving averages (Stro
 - [x] Exact money arithmetic, locked balance updates, responsive UI, live price refresh, standard bcrypt, SLF4J logging
 - [x] Database tests in CI, Flyway migrations, GUI split into one class per tab
 - [x] 14 months of cached price history, walk-forward backtest against a "price stays the same" baseline, forecast ranges
-- [ ] Any-ticker search, price charts, watchlist
+- [x] Stocks identified by ticker, per-user watchlist, search for any US stock or ETF, price charts
+- [ ] Portfolio value over time, realised P&L, limit and stop orders
