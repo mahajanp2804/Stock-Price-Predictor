@@ -13,16 +13,18 @@
     <!--
       core    — models, database, price providers, prediction (no UI)
       desktop — Swing app, packaged as desktop/target/stock-trading-app.jar
+      web     — Spring Boot REST API + browser UI, packaged as web/target/stock-trading-web.jar
     -->
     <modules>
         <module>core</module>
         <module>desktop</module>
+        <module>web</module>
     </modules>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <slf4j.version>2.0.13</slf4j.version>
+        <slf4j.version>2.0.20</slf4j.version>
     </properties>
 
     <dependencyManagement>

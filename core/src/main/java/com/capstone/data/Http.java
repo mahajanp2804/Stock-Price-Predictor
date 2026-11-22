@@ -19,6 +19,9 @@ final class Http {
         .connectTimeout(Duration.ofSeconds(8))
         .build();
 
+    /** Finnhub's free plan allows 60 calls a minute across quotes and search; stay a little under. */
+    static final RateLimiter FINNHUB = new RateLimiter(55, Duration.ofSeconds(60));
+
     private Http() {}
 
     /** GETs base + URL-encoded query params and returns the body. Throws on non-2xx. */

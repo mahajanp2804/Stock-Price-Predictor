@@ -34,6 +34,7 @@ public class FinnhubFetcher implements QuoteFetcher {
     @Override
     public OptionalDouble fetchQuote(String symbol) {
         try {
+            Http.FINNHUB.acquire();
             String raw = Http.get(BASE, Http.params("symbol", symbol, "token", AppConfig.getFinnhubKey()));
             OptionalDouble price = parseQuote(raw);
             if (price.isEmpty()) log.warn("Finnhub returned no quote for {}", symbol);

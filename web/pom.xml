@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.capstone</groupId>
+        <artifactId>stock-trading-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>stock-trading-web</artifactId>
+    <name>Stock Trading Web</name>
+    <description>Spring Boot REST API and browser front end</description>
+
+    <properties>
+        <spring-boot.version>4.1.2</spring-boot.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.capstone</groupId>
+            <artifactId>stock-trading-core</artifactId>
+        </dependency>
+        <!-- No spring-boot BOM import, so core keeps its own Flyway, MySQL
+             and Hikari versions; the app uses core's DBConnection, not a
+             Spring DataSource -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+            <version>${spring-boot.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Keep parameter names so @PathVariable / @RequestParam can match them
+                 (normally set by spring-boot-starter-parent, which isn't used here) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
+            <!-- Builds web/target/stock-trading-web.jar (java -jar) -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <finalName>stock-trading-web</finalName>
+                    <mainClass>com.capstone.web.WebApp</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals><goal>repackage</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

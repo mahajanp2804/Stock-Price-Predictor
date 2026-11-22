@@ -31,6 +31,7 @@ public class SymbolSearch {
     /** Matching stocks, best match first. Throws if the search itself fails. */
     public List<WatchItem> search(String query) throws IOException, InterruptedException {
         if (query == null || query.isBlank()) return List.of();
+        Http.FINNHUB.acquire();
         String raw = Http.get(BASE, Http.params("q", query.trim(), "exchange", "US", "token", AppConfig.getFinnhubKey()));
         List<WatchItem> results = parse(raw);
         log.info("Symbol search '{}': {} result(s)", query.trim(), results.size());
