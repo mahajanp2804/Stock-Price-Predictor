@@ -7,6 +7,7 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,8 @@ public class TwelvedataFetcher implements StockFetcher {
     private static final String BASE = "https://api.twelvedata.com/time_series";
     /** Trading days to request (~14 months) — one API credit regardless of size. */
     private static final int HISTORY_DAYS = 300;
+    /** Free plan: 8 requests a minute. Shared by all instances; waits rather than getting refused. */
+    private static final RateLimiter LIMIT = new RateLimiter(8, Duration.ofSeconds(61));
 
     @Override
     public String providerName() { return "Twelve Data"; }
@@ -37,6 +40,7 @@ public class TwelvedataFetcher implements StockFetcher {
     @Override
     public List<PricePoint> fetchHistory(String symbol) {
         try {
+            LIMIT.acquire();
             String raw = Http.get(BASE, Http.params(
                 "symbol", symbol,
                 "interval", "1day",

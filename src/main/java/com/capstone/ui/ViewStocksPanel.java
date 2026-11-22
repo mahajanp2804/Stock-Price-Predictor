@@ -21,7 +21,7 @@ class ViewStocksPanel extends JPanel {
     private final StockDataModule stocks;
     private final DefaultTableModel model = Ui.readOnlyModel("Symbol", "Company", "Latest Price", "30-Day Change", "Price As Of");
     private final JTable table = Ui.table(model);
-    final JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+    private final JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
 
     ViewStocksPanel(AppContext ctx) {
         super(new BorderLayout());
@@ -31,8 +31,11 @@ class ViewStocksPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         add(new JScrollPane(table), BorderLayout.CENTER);
 
+        JButton addBtn = new JButton("Add stock…");
+        addBtn.addActionListener(e -> new AddStockDialog(ctx, this::watchlistChanged).setVisible(true));
         JButton removeBtn = new JButton("Remove from watchlist");
         removeBtn.addActionListener(e -> removeSelected(removeBtn));
+        actions.add(addBtn);
         actions.add(removeBtn);
         add(actions, BorderLayout.SOUTH);
         refresh();
