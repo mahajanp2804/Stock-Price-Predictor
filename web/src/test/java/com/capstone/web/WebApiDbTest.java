@@ -73,6 +73,18 @@ class WebApiDbTest {
         assertEquals("up", r.json().getString("database"));
     }
 
+    @Test @Order(1)
+    void frontEndServedWithSecurityHeaders() throws Exception {
+        HttpResponse<String> r = http.send(req("/", null).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, r.statusCode());
+        assertTrue(r.body().contains("<title>Stock Price Predictor</title>"));
+        String csp = r.headers().firstValue("Content-Security-Policy").orElse("");
+        assertTrue(csp.contains("default-src 'self'") && csp.contains("frame-ancestors 'none'"), csp);
+        assertFalse(csp.contains("unsafe-inline"), csp);
+        assertEquals("nosniff", r.headers().firstValue("X-Content-Type-Options").orElse(""));
+        assertEquals(200, get("/app.js", null).status());
+    }
+
     @Test @Order(2)
     void unknownPathsAndMethods() throws Exception {
         assertEquals(404, get("/no-such-page", null).status());
