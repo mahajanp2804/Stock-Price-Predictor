@@ -1,7 +1,5 @@
 package com.capstone.ui;
 
-import com.capstone.data.StockDataModule;
-
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
@@ -18,10 +16,6 @@ final class Ui {
 
     static void showError(Component parent, String msg) {
         JOptionPane.showMessageDialog(parent, msg, "Error", JOptionPane.ERROR_MESSAGE);
-    }
-
-    static JComboBox<String> stockCombo(StockDataModule stocks) {
-        return new JComboBox<>(stocks.getSymbols().toArray(new String[0]));
     }
 
     static DefaultTableModel readOnlyModel(String... columns) {

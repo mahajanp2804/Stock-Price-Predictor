@@ -14,7 +14,7 @@ class TrendPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(20, 40, 20, 40));
         GridBagConstraints gc = new GridBagConstraints();
         gc.insets = new Insets(8, 8, 8, 8); gc.fill = GridBagConstraints.HORIZONTAL;
-        JComboBox<String> stockCombo = Ui.stockCombo(ctx.stocks());
+        JComboBox<String> stockCombo = ctx.combos().create();
         JButton predictBtn = new JButton("Analyse Trend");
         JLabel resultLabel = new JLabel(" ");
         resultLabel.setFont(new Font("SansSerif", Font.BOLD, 13));

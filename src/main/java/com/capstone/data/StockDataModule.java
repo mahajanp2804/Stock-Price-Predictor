@@ -3,6 +3,7 @@ package com.capstone.data;
 import com.capstone.db.PriceCache;
 import com.capstone.model.PricePoint;
 import com.capstone.model.Stock;
+import com.capstone.model.WatchItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,15 +48,6 @@ public class StockDataModule {
     /** Cached history younger than this is used without calling a provider. */
     static final Duration CACHE_TTL = Duration.ofHours(6);
 
-    /** Ticker → company name of the stocks every user starts with. */
-    public static final Map<String, String> DEFAULT_STOCKS = new LinkedHashMap<>();
-    static {
-        DEFAULT_STOCKS.put("AAPL",  "Apple Inc");
-        DEFAULT_STOCKS.put("MSFT",  "Microsoft Corp");
-        DEFAULT_STOCKS.put("AMZN",  "Amazon.com Inc");
-        DEFAULT_STOCKS.put("GOOGL", "Alphabet Inc Class A");
-        DEFAULT_STOCKS.put("TSLA",  "Tesla Inc");
-    }
 
     // ----------------------------------------------------------------
     // Loading
@@ -63,14 +55,19 @@ public class StockDataModule {
 
     /** Loads history for the default stocks, then live quotes. Blocking. */
     public void loadAll() {
-        loadAll(DEFAULT_STOCKS);
+        loadAll(WatchItem.DEFAULTS);
     }
 
-    /** Loads history for each ticker → company name, then live quotes. Blocking. */
-    public void loadAll(Map<String, String> stocks) {
+    /** Loads history for each stock, then live quotes. Blocking. */
+    public void loadAll(List<WatchItem> stocks) {
         logChainStatus();
-        for (Map.Entry<String, String> s : stocks.entrySet()) load(s.getKey(), s.getValue());
+        for (WatchItem s : stocks) load(s.symbol(), s.companyName());
         refreshQuotes();
+    }
+
+    /** Stops tracking a stock (e.g. removed from the watchlist). */
+    public void remove(String symbol) {
+        stockMap.remove(symbol);
     }
 
     /** Loads one stock's history (no live quote). Returns false if no price at all could be found. Blocking. */

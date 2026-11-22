@@ -3,6 +3,7 @@ package com.capstone.ui;
 import com.capstone.data.StockDataModule;
 import com.capstone.db.DBConnection;
 import com.capstone.db.PortfolioManager;
+import com.capstone.db.WatchlistManager;
 import com.capstone.model.Money;
 
 import com.formdev.flatlaf.FlatDarkLaf;
@@ -28,6 +29,7 @@ public class StockTradingGUI extends JFrame {
 
     private final StockDataModule  stockDataModule;
     private final PortfolioManager portfolioManager;
+    private final WatchlistManager watchlistManager = new WatchlistManager();
     private final int    userId;
     private final String username;
 
@@ -59,7 +61,7 @@ public class StockTradingGUI extends JFrame {
         JPanel loadingPanel = buildLoadingPanel();
         add(loadingPanel, BorderLayout.CENTER);
 
-        UiTasks.run(() -> { stockDataModule.loadAll(); return null; },
+        UiTasks.run(() -> { stockDataModule.loadAll(watchlistManager.list(userId)); return null; },
             ignored -> {
                 remove(loadingPanel);
                 add(buildTabs(), BorderLayout.CENTER);
@@ -78,7 +80,8 @@ public class StockTradingGUI extends JFrame {
     // ----------------------------------------------------------------
 
     private JTabbedPane buildTabs() {
-        AppContext ctx = new AppContext(stockDataModule, portfolioManager, userId, this, this::afterTrade);
+        AppContext ctx = new AppContext(stockDataModule, portfolioManager, watchlistManager, userId, this,
+            new StockCombos(stockDataModule), this::afterTrade);
         viewStocksPanel = new ViewStocksPanel(ctx);
         JTabbedPane tp = new JTabbedPane();
         tp.addTab("View Stocks",    viewStocksPanel);

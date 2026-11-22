@@ -16,8 +16,20 @@ public class AuthManager {
         if (username == null || username.isBlank() || !PasswordHasher.isAcceptableLength(plainPassword)) return RegisterResult.INVALID;
         String hashed = PasswordHasher.hash(plainPassword);
         String sql    = "INSERT INTO users (username, password) VALUES (?, ?)";
-        try (Connection conn = DBConnection.get(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, username.trim()); ps.setString(2, hashed); ps.executeUpdate(); return RegisterResult.OK;
+        try (Connection conn = DBConnection.get()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, username.trim()); ps.setString(2, hashed); ps.executeUpdate();
+                try (ResultSet keys = ps.getGeneratedKeys()) {
+                    keys.next();
+                    WatchlistManager.addDefaults(conn, keys.getInt(1));
+                }
+                conn.commit();
+                return RegisterResult.OK;
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
         } catch (SQLIntegrityConstraintViolationException e) {
             return RegisterResult.USERNAME_TAKEN;
         } catch (SQLException e) {

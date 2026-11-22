@@ -27,7 +27,7 @@ class PredictPricesPanel extends JPanel {
         super(new BorderLayout(8, 8));
         setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
         JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        JComboBox<String> stockCombo = Ui.stockCombo(ctx.stocks());
+        JComboBox<String> stockCombo = ctx.combos().create();
         JTextField daysField = new JTextField("5", 4);
         JComboBox<String> modelCombo = new JComboBox<>();
         modelCombo.addItem(BEST);

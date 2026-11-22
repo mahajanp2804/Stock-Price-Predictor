@@ -114,6 +114,17 @@ public class PortfolioManager {
         return list;
     }
 
+    /** Shares of symbol the user holds (0 if none). */
+    public int heldQuantity(int userId, String symbol) throws SQLException {
+        String sql = "SELECT p.quantity FROM portfolio p JOIN stocks s ON p.stock_id = s.id WHERE p.user_id = ? AND s.stock_name = ?";
+        try (Connection conn = DBConnection.get(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId); ps.setString(2, symbol);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
     public BigDecimal getUserBalance(int userId) throws SQLException {
         try (Connection conn = DBConnection.get();
              PreparedStatement ps = conn.prepareStatement("SELECT balance FROM users WHERE id = ?")) {

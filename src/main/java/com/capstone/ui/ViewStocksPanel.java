@@ -12,21 +12,57 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.OptionalDouble;
 
-/** "View Stocks" tab: latest price, 30-day change and how fresh each price is. */
+/** "View Stocks" tab: the user's watchlist with latest price, 30-day change and how fresh each price is. */
 class ViewStocksPanel extends JPanel {
 
     static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
+    private final AppContext ctx;
     private final StockDataModule stocks;
     private final DefaultTableModel model = Ui.readOnlyModel("Symbol", "Company", "Latest Price", "30-Day Change", "Price As Of");
+    private final JTable table = Ui.table(model);
+    final JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
 
     ViewStocksPanel(AppContext ctx) {
         super(new BorderLayout());
+        this.ctx = ctx;
         this.stocks = ctx.stocks();
-        JTable table = Ui.table(model);
         table.getColumnModel().getColumn(3).setCellRenderer(Ui.pnlRenderer());
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         add(new JScrollPane(table), BorderLayout.CENTER);
+
+        JButton removeBtn = new JButton("Remove from watchlist");
+        removeBtn.addActionListener(e -> removeSelected(removeBtn));
+        actions.add(removeBtn);
+        add(actions, BorderLayout.SOUTH);
         refresh();
+    }
+
+    /** Removes the selected stock, unless the user still holds shares of it. */
+    private void removeSelected(JButton removeBtn) {
+        int row = table.getSelectedRow();
+        if (row < 0) { Ui.showError(ctx.frame(), "Select a stock to remove."); return; }
+        String symbol = (String) model.getValueAt(row, 0);
+        removeBtn.setEnabled(false);
+        UiTasks.run(() -> {
+                int held = ctx.portfolio().heldQuantity(ctx.userId(), symbol);
+                if (held > 0) return String.format("You hold %d share(s) of %s. Sell them before removing it.", held, symbol);
+                ctx.watchlist().remove(ctx.userId(), symbol);
+                return null;
+            },
+            problem -> {
+                removeBtn.setEnabled(true);
+                if (problem != null) { Ui.showError(ctx.frame(), problem); return; }
+                stocks.remove(symbol);
+                watchlistChanged();
+            },
+            err -> { removeBtn.setEnabled(true); Ui.showError(ctx.frame(), "Could not remove " + symbol + ": " + err.getMessage()); });
+    }
+
+    /** Call on the UI thread after stocks are added or removed. */
+    void watchlistChanged() {
+        refresh();
+        ctx.combos().refreshAll();
     }
 
     /** Re-reads prices from the data module (no I/O). Call on the UI thread. */

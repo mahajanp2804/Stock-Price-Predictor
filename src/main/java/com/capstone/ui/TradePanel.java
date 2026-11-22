@@ -14,7 +14,7 @@ class TradePanel extends JPanel {
         GridBagConstraints gc = new GridBagConstraints();
         gc.insets = new Insets(7, 7, 7, 7); gc.fill = GridBagConstraints.HORIZONTAL;
 
-        JComboBox<String> stockCombo = Ui.stockCombo(ctx.stocks());
+        JComboBox<String> stockCombo = ctx.combos().create();
         JTextField qtyField = new JTextField(14);
         JButton tradeButton = new JButton(isBuy ? "Buy" : "Sell");
         JLabel resultLabel = new JLabel(" ");
