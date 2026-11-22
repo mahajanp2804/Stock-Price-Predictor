@@ -54,16 +54,12 @@ You can set any value as an environment variable instead, and it takes priority 
 
 ```bash
 mvn clean package
-java -jar target/stock-trading-app.jar
+java -jar desktop/target/stock-trading-app.jar
 ```
 
-Run it from the project root so it finds `config.properties`. To run from source without packaging:
+Run it from the project root so it finds `config.properties`.
 
-```bash
-mvn compile exec:java
-```
-
-**The database sets itself up.** With the default `db.url` (`…/stockdb?createDatabaseIfNotExist=true`), MySQL creates `stockdb` and [Flyway](https://flywaydb.org) applies the schema migrations in `src/main/resources/db/migration` on first connect.
+**The database sets itself up.** With the default `db.url` (`…/stockdb?createDatabaseIfNotExist=true`), MySQL creates `stockdb` and [Flyway](https://flywaydb.org) applies the schema migrations in `core/src/main/resources/db/migration` on first connect.
 
 **Upgrading from an older version:** a `stockdb` created by the old `stockdb.sql` script is detected and upgraded automatically, and your data is kept. Accounts created with the old password hashing still log in and are moved to standard bcrypt on their next login.
 
@@ -85,16 +81,20 @@ CI runs all tests, including the database tests, against MySQL 8.4 on every push
 
 ```
 ├── config.example.properties   # config template (copy to config.properties)
-├── pom.xml
-└── src
-    ├── main/java/com/capstone   # BacktestReport: command-line model comparison
-    │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes and symbol search (Finnhub)
-    │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading, watchlist, price cache
-    │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
-    │   ├── prediction/  # forecasting models, walk-forward backtester, indicators
-    │   └── ui/          # main window, one class per tab, price chart, add-stock search, login, CSV export
-    ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
-    └── test/java/com/capstone         # unit tests + database tests (*DbTest)
+├── pom.xml                     # parent: lists the modules
+├── core/                       # shared by the desktop and web apps
+│   └── src
+│       ├── main/java/com/capstone   # BacktestReport: command-line model comparison
+│       │   ├── data/        # history providers (Twelve Data, Alpha Vantage), live quotes and symbol search (Finnhub)
+│       │   ├── db/          # connection pool + migrations, config, auth + password hashing, trading, watchlist, price cache
+│       │   ├── model/       # Stock, PortfolioEntry, Transaction, Money
+│       │   └── prediction/  # forecasting models, walk-forward backtester, indicators
+│       ├── main/resources/db/migration/   # Flyway schema migrations (V1, V2, …)
+│       └── test/                          # unit tests + database tests (*DbTest)
+└── desktop/                    # Swing app → desktop/target/stock-trading-app.jar
+    └── src
+        ├── main/java/com/capstone/ui   # main window, one class per tab, price chart, add-stock search, login, CSV export
+        └── test/                       # UI logic tests
 ```
 
 ## How the prediction works
@@ -140,7 +140,7 @@ To reproduce these tables with the latest data:
 
 ```bash
 mvn clean package -DskipTests
-java -cp target/stock-trading-app.jar com.capstone.BacktestReport 1 5
+java -cp desktop/target/stock-trading-app.jar com.capstone.BacktestReport 1 5
 ```
 
 ### Trend label

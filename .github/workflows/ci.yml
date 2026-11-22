@@ -42,4 +42,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: stock-trading-app
-          path: target/stock-trading-app.jar
+          path: desktop/target/stock-trading-app.jar
