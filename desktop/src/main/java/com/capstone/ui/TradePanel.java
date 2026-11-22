@@ -40,8 +40,8 @@ class TradePanel extends JPanel {
                     Stock stock = ctx.stocks().getStock(name);
                     if (stock == null) return "Stock data not available for " + name;
                     double price = stock.getLatestPrice();
-                    String msg = isBuy ? ctx.portfolio().buyStock(ctx.userId(), name, qty, price)
-                                       : ctx.portfolio().sellStock(ctx.userId(), name, qty, price);
+                    String msg = (isBuy ? ctx.portfolio().buyStock(ctx.userId(), name, qty, price)
+                                        : ctx.portfolio().sellStock(ctx.userId(), name, qty, price)).message();
                     return fresh ? msg : msg + "<br><i>Live quote unavailable — used last known price.</i>";
                 },
                 msg -> {

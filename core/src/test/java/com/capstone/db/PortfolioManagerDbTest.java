@@ -1,6 +1,7 @@
 package com.capstone.db;
 
 import com.capstone.model.PortfolioEntry;
+import com.capstone.model.TradeResult;
 import com.capstone.model.Transaction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,8 +40,10 @@ class PortfolioManagerDbTest extends DbTestSupport {
     @Test
     @DisplayName("buy deducts the exact total and records the position")
     void buy() throws Exception {
-        String msg = pm.buyStock(user, "AAPL", 10, 338.32);
-        assertTrue(msg.startsWith("Bought 10 of AAPL"), msg);
+        TradeResult r = pm.buyStock(user, "AAPL", 10, 338.32);
+        assertTrue(r.success());
+        assertTrue(r.message().startsWith("Bought 10 of AAPL"), r.message());
+        assertEquals(bd("6616.80"), r.newBalance());
         assertEquals(bd("6616.80"), balance());
         List<PortfolioEntry> holdings = pm.viewPortfolioWithPnL(user, Map.of());
         assertEquals(1, holdings.size());
@@ -67,8 +70,10 @@ class PortfolioManagerDbTest extends DbTestSupport {
     @Test
     @DisplayName("a buy larger than the balance is rejected and changes nothing")
     void insufficientBalance() throws Exception {
-        String msg = pm.buyStock(user, "TSLA", 1000, 400);
-        assertTrue(msg.startsWith("Insufficient balance"), msg);
+        TradeResult r = pm.buyStock(user, "TSLA", 1000, 400);
+        assertFalse(r.success());
+        assertNull(r.newBalance());
+        assertTrue(r.message().startsWith("Insufficient balance"), r.message());
         assertEquals(bd("10000.00"), balance());
         assertEquals("0", scalar("SELECT COUNT(*) FROM transactions"));
         assertEquals("0", scalar("SELECT COUNT(*) FROM portfolio"));
@@ -77,8 +82,8 @@ class PortfolioManagerDbTest extends DbTestSupport {
     @Test
     @DisplayName("zero or negative quantities are rejected")
     void invalidQuantity() throws Exception {
-        assertEquals("Quantity must be greater than zero.", pm.buyStock(user, "AAPL", 0, 100));
-        assertEquals("Quantity must be greater than zero.", pm.sellStock(user, "AAPL", -1, 100));
+        assertEquals("Quantity must be greater than zero.", pm.buyStock(user, "AAPL", 0, 100).message());
+        assertEquals("Quantity must be greater than zero.", pm.sellStock(user, "AAPL", -1, 100).message());
         assertEquals(bd("10000.00"), balance());
     }
 
@@ -86,8 +91,8 @@ class PortfolioManagerDbTest extends DbTestSupport {
     @DisplayName("selling more than held, or a stock never held, is rejected")
     void oversell() throws Exception {
         pm.buyStock(user, "AAPL", 5, 100);
-        assertEquals("You only hold 5 share(s) of AAPL.", pm.sellStock(user, "AAPL", 6, 100));
-        assertEquals("You don't hold any shares of TSLA.", pm.sellStock(user, "TSLA", 1, 100));
+        assertEquals("You only hold 5 share(s) of AAPL.", pm.sellStock(user, "AAPL", 6, 100).message());
+        assertEquals("You don't hold any shares of TSLA.", pm.sellStock(user, "TSLA", 1, 100).message());
         assertEquals(bd("9500.00"), balance());
     }
 
@@ -139,7 +144,7 @@ class PortfolioManagerDbTest extends DbTestSupport {
         for (int i = 0; i < 20; i++) {
             futures.add(pool.submit(() -> {
                 start.await();
-                if (pm.buyStock(user, "MSFT", 1, 1000).startsWith("Bought")) succeeded.incrementAndGet();
+                if (pm.buyStock(user, "MSFT", 1, 1000).success()) succeeded.incrementAndGet();
                 return null;
             }));
         }
