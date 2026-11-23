@@ -5,12 +5,16 @@ import com.capstone.model.PortfolioEntry;
 import com.capstone.model.Stock;
 import com.capstone.model.TradeResult;
 import com.capstone.model.Transaction;
+import com.capstone.portfolio.PortfolioAnalytics;
+import com.capstone.portfolio.PortfolioLedger;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +26,10 @@ class PortfolioController {
     record Me(String username, BigDecimal balance) {}
     record TradeRequest(String symbol, String side, Integer quantity) {}
     record TradeResponse(boolean success, String message, BigDecimal balance, double price, boolean livePrice) {}
+    record TransactionView(LocalDateTime timestamp, String type, String stockName, int quantity,
+                           BigDecimal price, BigDecimal total, BigDecimal realizedPnL) {}
+    record ValueView(LocalDate date, BigDecimal value) {}
+    record ReportView(PortfolioAnalytics.Summary summary, List<ValueView> history) {}
 
     static final int MAX_QUANTITY = 1_000_000;
 
@@ -41,9 +49,24 @@ class PortfolioController {
         return portfolio.viewPortfolioWithPnL(s.userId(), live);
     }
 
+    /** Cash, holdings, total return, realised/unrealised P&L, and daily total value since the first trade. */
+    @GetMapping("/portfolio/report")
+    ReportView report(@RequestAttribute(AuthInterceptor.SESSION) SessionStore.Session s) throws SQLException {
+        PortfolioAnalytics.Report r = analytics().report(s.userId());
+        return new ReportView(r.summary(), r.history().stream().map(v -> new ValueView(v.date(), v.total())).toList());
+    }
+
+    /** Newest first; sells carry their realised P&L. */
     @GetMapping("/transactions")
-    List<Transaction> transactions(@RequestAttribute(AuthInterceptor.SESSION) SessionStore.Session s) throws SQLException {
-        return portfolio.viewTransactions(s.userId());
+    List<TransactionView> transactions(@RequestAttribute(AuthInterceptor.SESSION) SessionStore.Session s) throws SQLException {
+        return analytics().report(s.userId()).transactions().stream().map(PortfolioController::view).toList();
+    }
+
+    private PortfolioAnalytics analytics() { return new PortfolioAnalytics(portfolio, stocks.data); }
+
+    private static TransactionView view(PortfolioLedger.Entry e) {
+        Transaction t = e.transaction();
+        return new TransactionView(t.timestamp(), t.type(), t.stockName(), t.quantity(), t.price(), t.total(), e.realizedPnL());
     }
 
     /** Fetches a fresh quote, then buys or sells at it. 422 if the trade is refused (e.g. not enough cash). */

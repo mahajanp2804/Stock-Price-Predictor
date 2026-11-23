@@ -155,10 +155,26 @@ class WebApiDbTest {
         assertEquals(400, post("/api/trades", "{\"symbol\":\"AAPL\",\"side\":\"HOLD\",\"quantity\":1}", token).status());
         assertEquals(400, post("/api/trades", "not json", token).status());
 
+        Res sell = post("/api/trades", "{\"symbol\":\"AAPL\",\"side\":\"SELL\",\"quantity\":4}", token);
+        assertEquals(200, sell.status(), sell.body());
+
         JSONArray holdings = get("/api/portfolio", token).array();
         assertEquals(1, holdings.length());
-        assertEquals(10, holdings.getJSONObject(0).getInt("quantity"));
-        assertEquals(1, get("/api/transactions", token).array().length());
+        assertEquals(6, holdings.getJSONObject(0).getInt("quantity"));
+
+        JSONArray txns = get("/api/transactions", token).array();
+        assertEquals(2, txns.length());
+        assertEquals(0.0, txns.getJSONObject(0).getDouble("realizedPnL"), 1e-9, "sold at the price it was bought");
+        assertTrue(txns.getJSONObject(1).isNull("realizedPnL"), "buys have no realised P&L");
+
+        JSONObject report = get("/api/portfolio/report", token).json();
+        JSONObject s = report.getJSONObject("summary");
+        assertEquals(10000.0, s.getDouble("startingValue"), 1e-9);
+        assertEquals(s.getDouble("cash") + s.getDouble("holdingsValue"), s.getDouble("total"), 0.005);
+        assertEquals(0.0, s.getDouble("totalReturn"), 0.005);
+        JSONArray values = report.getJSONArray("history");
+        assertTrue(values.length() >= 1);
+        assertEquals(s.getDouble("total"), values.getJSONObject(values.length() - 1).getDouble("value"), 0.005);
     }
 
     @Test @Order(7)

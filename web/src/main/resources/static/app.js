@@ -115,6 +115,8 @@ $('logout-btn').addEventListener('click', async () => {
 async function startApp() {
   for (const id of ['watch-msg', 'trade-msg', 'predict-msg']) setMsg($(id), '');
   for (const id of ['portfolio-table', 'tx-table', 'watch-table']) $(id).querySelector('tbody').replaceChildren();
+  $('portfolio-summary').replaceChildren();
+  $('value-chart').replaceChildren();
   $('predict-out').hidden = true;
   $('search-results').hidden = true;
   $('auth-view').hidden = true;
@@ -256,18 +258,21 @@ async function drawChart() {
       $('show-forecast').checked ? api('/api/stocks/' + encodeURIComponent(symbol) + '/forecast?days=10').catch(() => null) : null,
     ]);
     if (symbol !== state.selected) return;   // another stock was picked meanwhile
-    renderChart(box, symbol, history, forecast);
+    const w = state.watchlist.find((x) => x.symbol === symbol);
+    renderChart(box, $('chart-title'), symbol + ' ' + (w ? w.name : ''), history, forecast, state.period);
   } catch (err) { box.replaceChildren(el('div', err.message, 'empty')); }
 }
 
-/** Line chart of closes (SVG), with hover readout and optional forecast band. */
-function renderChart(box, symbol, history, forecast) {
-  const w = state.watchlist.find((x) => x.symbol === symbol);
+/**
+ * Line chart (SVG) of a dated series — a stock's closes or the portfolio's value —
+ * with a hover readout and an optional forecast band.
+ * history: [{date, close}], period: '1M' … 'ALL' (for the title and date labels).
+ */
+function renderChart(box, titleEl, label, history, forecast, period) {
   const first = history[0].close, last = history[history.length - 1].close;
-  const change = (last - first) / first * 100;
-  const title = $('chart-title');
-  title.replaceChildren(document.createTextNode(symbol + ' ' + (w ? w.name : '') + '  ' + money(last) + '  '),
-    el('span', pct(change) + ' over ' + (state.period === 'ALL' ? 'all data' : state.period), change >= 0 ? 'gain' : 'loss'));
+  const change = first === 0 ? 0 : (last - first) / first * 100;
+  titleEl.replaceChildren(document.createTextNode(label + '  ' + money(last) + '  '),
+    el('span', pct(change) + ' over ' + (period === 'ALL' ? 'all data' : period), change >= 0 ? 'gain' : 'loss'));
 
   const fc = forecast ? forecast.forecast : [];
   const width = box.clientWidth || 800, height = box.clientHeight || 300, L = 60, R = 12, T = 12, B = 26;
@@ -293,11 +298,13 @@ function renderChart(box, symbol, history, forecast) {
     add('line', { x1: L, x2: width - R, y1: y(t), y2: y(t), class: 'grid' });
     add('text', { x: L - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis' }, '$' + (yMax - yMin < 10 ? t.toFixed(2) : Math.round(t).toLocaleString()));
   }
+  // Month + year labels only when the data spans more than ~7 months; otherwise month + day
+  const longRange = (new Date(history[history.length - 1].date) - new Date(history[0].date)) / 86400000 > 213;
   const labels = Math.min(6, history.length);
   for (let k = 0; k < labels; k++) {
     const i = labels === 1 ? 0 : Math.round(k * (history.length - 1) / (labels - 1));
     const d = new Date(history[i].date + 'T00:00:00');
-    const text = d.toLocaleDateString('en-US', state.period === '1Y' || state.period === 'ALL' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' });
+    const text = d.toLocaleDateString('en-US', longRange ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' });
     add('text', { x: x(i), y: height - 6, 'text-anchor': k === 0 ? 'start' : k === labels - 1 ? 'end' : 'middle', class: 'axis' }, text);
   }
 
@@ -372,29 +379,53 @@ $('trade-form').addEventListener('submit', async (e) => {
 async function loadPortfolio() {
   const tbody = $('portfolio-table').querySelector('tbody');
   try {
-    const rows = await api('/api/portfolio');
-    if (!rows.length) { emptyRow(tbody, 7, 'No holdings yet. Buy something on the Trade tab.'); return; }
-    tbody.replaceChildren(...rows.map((p) => row([
+    const [rows, report] = await Promise.all([api('/api/portfolio'), api('/api/portfolio/report')]);
+    renderSummary(report.summary);
+    if (!rows.length) emptyRow(tbody, 7, 'No holdings yet. Buy something on the Trade tab.');
+    else tbody.replaceChildren(...rows.map((p) => row([
       { text: p.stockName }, { text: String(p.quantity), cls: 'num' },
       { text: money(p.avgPrice), cls: 'num' }, { text: money(p.currentPrice), cls: 'num' },
       { text: money(p.marketValue), cls: 'num' },
-      { text: (p.unrealizedPnL >= 0 ? '+' : '-') + money(Math.abs(p.unrealizedPnL)), cls: 'num ' + (p.unrealizedPnL >= 0 ? 'gain' : 'loss') },
+      { text: signedMoney(p.unrealizedPnL), cls: 'num ' + (p.unrealizedPnL >= 0 ? 'gain' : 'loss') },
       { text: pct(p.pnlPercent), cls: 'num ' + (p.pnlPercent >= 0 ? 'gain' : 'loss') },
     ])));
+    const box = $('value-chart');
+    if (report.history.length) {
+      renderChart(box, $('value-title'), 'Portfolio value', report.history.map((v) => ({ date: v.date, close: v.value })), null, 'ALL');
+    } else {
+      $('value-title').textContent = 'Portfolio value';
+      box.replaceChildren(el('div', "Your portfolio's value over time appears after your first trade.", 'empty'));
+    }
   } catch (err) { emptyRow(tbody, 7, err.message); }
+}
+
+const signedMoney = (v) => (v >= 0 ? '+' : '-') + money(Math.abs(v));
+
+function renderSummary(s) {
+  const items = [
+    ['Cash', money(s.cash)], ['Holdings', money(s.holdingsValue)], ['Total', money(s.total)],
+    ['Total return', signedMoney(s.totalReturn) + ' (' + pct(s.totalReturnPercent) + ')', s.totalReturn],
+    ['Realised P&L', signedMoney(s.realizedPnL), s.realizedPnL], ['Unrealised P&L', signedMoney(s.unrealizedPnL), s.unrealizedPnL],
+  ];
+  $('portfolio-summary').replaceChildren(...items.map(([label, value, sign]) => {
+    const box = el('div', null, 'stat');
+    box.append(el('div', label, 'muted small'), el('div', value, 'stat-value' + (sign == null ? '' : sign >= 0 ? ' gain' : ' loss')));
+    return box;
+  }));
 }
 
 async function loadTransactions() {
   const tbody = $('tx-table').querySelector('tbody');
   try {
     const rows = await api('/api/transactions');
-    if (!rows.length) { emptyRow(tbody, 6, 'No transactions yet.'); return; }
+    if (!rows.length) { emptyRow(tbody, 7, 'No transactions yet.'); return; }
     tbody.replaceChildren(...rows.map((t) => row([
       { text: t.timestamp.replace('T', ' ').slice(0, 16) }, { text: t.type, cls: t.type === 'BUY' ? 'gain' : 'loss' },
       { text: t.stockName }, { text: String(t.quantity), cls: 'num' },
       { text: money(t.price), cls: 'num' }, { text: money(t.total), cls: 'num' },
+      { text: t.realizedPnL == null ? '' : signedMoney(t.realizedPnL), cls: 'num ' + (t.realizedPnL == null ? '' : t.realizedPnL >= 0 ? 'gain' : 'loss') },
     ])));
-  } catch (err) { emptyRow(tbody, 6, err.message); }
+  } catch (err) { emptyRow(tbody, 7, err.message); }
 }
 
 $('portfolio-refresh').addEventListener('click', loadPortfolio);

@@ -109,6 +109,11 @@ tbody tr { cursor: default; }
 #watch-table tbody tr:hover, #watch-table tbody tr.selected { background: var(--hover); }
 td.empty { color: var(--muted); text-align: center; padding: 18px; }
 
+/* Portfolio summary */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.stat { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.stat-value { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* Search results */
 .results { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--border); border-radius: 8px; max-height: 240px; overflow-y: auto; }
 .results li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }

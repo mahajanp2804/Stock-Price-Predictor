@@ -19,7 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Line chart of a stock's daily closes for a chosen period, with the date and price
+ * Line chart of a stock's daily closes (or any dated series, e.g. portfolio value) for a chosen period, with the date and value
  * under the mouse, and optionally the next FORECAST_DAYS of the most accurate model's
  * forecast with its 80% range. Drawn with Java2D using the current look-and-feel colours.
  */
@@ -36,7 +36,10 @@ class PriceChart extends JComponent {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("MMM d");
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("MMM yy");
 
-    private Stock stock;
+    private String title = "", subtitle = "";
+    private List<PricePoint> series;          // null until a stock or series is set
+    private List<Double> forecastCloses;      // null when forecasts don't apply (e.g. portfolio value)
+    private String emptyMessage = "Select a stock to see its chart.";
     private Period period = Period.THREE_MONTHS;
     private boolean showForecast;
 
@@ -56,7 +59,23 @@ class PriceChart extends JComponent {
         addMouseMotionListener(mouse);
     }
 
-    void setStock(Stock stock) { this.stock = stock; recompute(); }
+    void setStock(Stock stock) {
+        title = stock == null ? "" : stock.getSymbol();
+        subtitle = stock == null ? "" : stock.getName();
+        series = stock == null ? null : stock.getHistory();
+        forecastCloses = stock == null ? null : stock.getPriceHistory();
+        recompute();
+    }
+
+    /** Charts any dated series (no forecast option); shows emptyMessage when it's empty. */
+    void setSeries(String title, List<PricePoint> points, String emptyMessage) {
+        this.title = title;
+        this.subtitle = "";
+        this.series = points;
+        this.forecastCloses = null;
+        this.emptyMessage = emptyMessage;
+        recompute();
+    }
     void setPeriod(Period period) { this.period = period; recompute(); }
     void setShowForecast(boolean show) { this.showForecast = show; recompute(); }
 
@@ -64,11 +83,11 @@ class PriceChart extends JComponent {
 
     private void recompute() {
         hover = -1;
-        visible = stock == null ? List.of() : slice(stock.getHistory(), period);
+        visible = series == null ? List.of() : slice(series, period);
         forecast = List.of();
         forecastModel = "";
-        if (stock != null && showForecast) {
-            List<Double> closes = stock.getPriceHistory();
+        if (forecastCloses != null && showForecast) {
+            List<Double> closes = forecastCloses;
             List<BacktestResult> results = Backtester.compareAll(closes, FORECAST_DAYS);
             BacktestResult best = results.stream().filter(r -> r.samples() > 0)
                 .min(Comparator.comparingDouble(BacktestResult::mae)).orElse(null);
@@ -153,7 +172,7 @@ class PriceChart extends JComponent {
 
         if (visible.isEmpty()) {
             g.setColor(fg);
-            g.drawString(stock == null ? "Select a stock to see its chart." : "No price history available.", LEFT, getHeight() / 2);
+            g.drawString(series == null || series.isEmpty() ? emptyMessage : "No data for this period.", LEFT, getHeight() / 2);
             g.dispose();
             return;
         }
@@ -230,9 +249,9 @@ class PriceChart extends JComponent {
         // Title: symbol, latest close, change over the period
         g.setColor(fg);
         g.setFont(g.getFont().deriveFont(Font.BOLD, 12f));
-        String title = String.format("%s  %s   $%,.2f", stock.getSymbol(), stock.getName(), last);
-        g.drawString(title, LEFT, 18);
-        int tx = LEFT + g.getFontMetrics().stringWidth(title) + 10;
+        String heading = String.format("%s  %s   $%,.2f", title, subtitle, last).replace("     ", "   ");
+        g.drawString(heading, LEFT, 18);
+        int tx = LEFT + g.getFontMetrics().stringWidth(heading) + 10;
         g.setColor(line);
         g.drawString(String.format("%+.2f%% over %s", (last - first) / first * 100, period == Period.ALL ? "all data" : period.label), tx, 18);
         if (!forecastModel.isEmpty()) {

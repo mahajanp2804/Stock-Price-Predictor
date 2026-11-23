@@ -1,12 +1,14 @@
 package com.capstone.ui;
 
+import com.capstone.portfolio.PortfolioAnalytics;
+import com.capstone.portfolio.PortfolioLedger;
 import com.capstone.model.Transaction;
 
 import javax.swing.*;
 import java.awt.*;
 import java.time.format.DateTimeFormatter;
 
-/** "Transactions" tab: the user's trade history, newest first. */
+/** "Transactions" tab: the user's trade history, newest first, with realised P&L on each sell. */
 class TransactionsPanel extends JPanel {
 
     private static final DateTimeFormatter TXN_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -20,15 +22,21 @@ class TransactionsPanel extends JPanel {
         JButton refreshBtn = new JButton("Refresh");
         refreshBtn.addActionListener(e -> {
             refreshBtn.setEnabled(false);
-            UiTasks.run(() -> ctx.portfolio().viewTransactions(ctx.userId()),
-                txns -> {
+            UiTasks.run(() -> new PortfolioAnalytics(ctx.portfolio(), ctx.stocks()).report(ctx.userId()),
+                report -> {
                     refreshBtn.setEnabled(true);
                     StringBuilder sb = new StringBuilder();
-                    for (Transaction t : txns) {
-                        sb.append(String.format("[%s] %-4s  %-10s  x%d @ $%.2f  =  $%.2f%n",
+                    for (PortfolioLedger.Entry en : report.transactions()) {
+                        Transaction t = en.transaction();
+                        sb.append(String.format("[%s] %-4s  %-6s  x%-5d @ $%,10.2f  =  $%,11.2f",
                             TXN_TIME.format(t.timestamp()), t.type(), t.stockName(), t.quantity(), t.price(), t.total()));
+                        if (en.realizedPnL() != null) sb.append("   realised ").append(PortfolioPanel.signed(en.realizedPnL()));
+                        sb.append('\n');
                     }
-                    area.setText(txns.isEmpty() ? "No transactions yet." : sb.toString());
+                    if (!report.transactions().isEmpty()) {
+                        sb.append("\nTotal realised P&L: ").append(PortfolioPanel.signed(report.summary().realizedPnL()));
+                    }
+                    area.setText(report.transactions().isEmpty() ? "No transactions yet." : sb.toString());
                 },
                 err -> { refreshBtn.setEnabled(true); Ui.showError(ctx.frame(), "Could not load transactions: " + err.getMessage()); });
         });

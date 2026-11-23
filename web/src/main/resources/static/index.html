@@ -91,12 +91,17 @@
     <section id="tab-portfolio" class="tab" hidden>
       <div class="card">
         <div class="card-head"><h2>Portfolio</h2><button id="portfolio-refresh">Refresh</button></div>
+        <div id="portfolio-summary" class="stats"></div>
         <div class="table-wrap">
           <table id="portfolio-table">
             <thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Avg price</th><th class="num">Price</th><th class="num">Value</th><th class="num">Unrealised P&amp;L</th><th class="num">P&amp;L %</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2 id="value-title">Portfolio value</h2></div>
+        <div id="value-chart" class="chart" aria-label="Portfolio value chart"></div>
       </div>
     </section>
 
@@ -106,7 +111,7 @@
         <div class="card-head"><h2>Transactions</h2><button id="tx-refresh">Refresh</button></div>
         <div class="table-wrap">
           <table id="tx-table">
-            <thead><tr><th>Time</th><th>Type</th><th>Symbol</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead>
+            <thead><tr><th>Time</th><th>Type</th><th>Symbol</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><th class="num">Realised P&amp;L</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
