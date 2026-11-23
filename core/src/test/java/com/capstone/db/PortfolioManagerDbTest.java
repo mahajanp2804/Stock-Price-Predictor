@@ -135,6 +135,26 @@ class PortfolioManagerDbTest extends DbTestSupport {
     }
 
     @Test
+    @DisplayName("replaying the transaction log reproduces the stored positions and balance")
+    void ledgerMatchesStoredPortfolio() throws Exception {
+        pm.buyStock(user, "AAPL", 7, 101.37);
+        pm.buyStock(user, "AAPL", 5, 99.991);
+        pm.buyStock(user, "MSFT", 3, 412.5);
+        pm.sellStock(user, "AAPL", 4, 105.2);
+        pm.buyStock(user, "AAPL", 2, 97.33);
+        pm.sellStock(user, "MSFT", 3, 400);
+
+        List<Transaction> oldestFirst = new ArrayList<>(pm.viewTransactions(user));
+        java.util.Collections.reverse(oldestFirst);
+        com.capstone.portfolio.PortfolioLedger.Result r = com.capstone.portfolio.PortfolioLedger.replay(oldestFirst);
+
+        assertEquals(scalar("SELECT avg_price FROM portfolio"), r.positions().get("AAPL").avgCost().toPlainString());
+        assertEquals(scalar("SELECT quantity FROM portfolio"), String.valueOf(r.positions().get("AAPL").quantity()));
+        assertFalse(r.positions().containsKey("MSFT"));
+        assertEquals(balance(), bd("10000.00").add(r.netCashFlow()));
+    }
+
+    @Test
     @DisplayName("concurrent buys can't overspend: 20 × $1,000 against $10,000 → exactly 10 succeed")
     void concurrentBuys() throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(10);
