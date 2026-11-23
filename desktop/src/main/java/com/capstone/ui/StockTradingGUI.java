@@ -2,6 +2,7 @@ package com.capstone.ui;
 
 import com.capstone.data.StockDataModule;
 import com.capstone.db.DBConnection;
+import com.capstone.db.OrderManager;
 import com.capstone.db.PortfolioManager;
 import com.capstone.db.WatchlistManager;
 import com.capstone.model.Money;
@@ -30,6 +31,8 @@ public class StockTradingGUI extends JFrame {
     private final StockDataModule  stockDataModule;
     private final PortfolioManager portfolioManager;
     private final WatchlistManager watchlistManager = new WatchlistManager();
+    private OrderManager orderManager;
+    private OrdersPanel ordersPanel;
     private final int    userId;
     private final String username;
 
@@ -40,6 +43,7 @@ public class StockTradingGUI extends JFrame {
     private String  balanceText = "…";
     private Instant pricesUpdatedAt;
     private boolean quoteRefreshInFlight;
+    private String  orderNote = "";
 
     public StockTradingGUI(int userId, String username) {
         this.userId          = userId;
@@ -80,13 +84,16 @@ public class StockTradingGUI extends JFrame {
     // ----------------------------------------------------------------
 
     private JTabbedPane buildTabs() {
-        AppContext ctx = new AppContext(stockDataModule, portfolioManager, watchlistManager, userId, this,
+        orderManager = new OrderManager(portfolioManager);
+        AppContext ctx = new AppContext(stockDataModule, portfolioManager, watchlistManager, orderManager, userId, this,
             new StockCombos(stockDataModule), this::afterTrade);
         viewStocksPanel = new ViewStocksPanel(ctx);
         JTabbedPane tp = new JTabbedPane();
         tp.addTab("View Stocks",    viewStocksPanel);
         tp.addTab("Buy",            new TradePanel(ctx, true));
         tp.addTab("Sell",           new TradePanel(ctx, false));
+        ordersPanel = new OrdersPanel(ctx);
+        tp.addTab("Orders",         ordersPanel);
         tp.addTab("Portfolio",      new PortfolioPanel(ctx));
         tp.addTab("Transactions",   new TransactionsPanel(ctx));
         tp.addTab("Predict Prices", new PredictPricesPanel(ctx));
@@ -194,14 +201,24 @@ public class StockTradingGUI extends JFrame {
     // ----------------------------------------------------------------
 
     /** Background quote refresh, driven by the timer; skips if one is already running. */
+    private record QuoteRound(int updated, java.util.List<OrderManager.Outcome> orders) {}
+
+    /** Background quote refresh, then fills any triggered limit/stop orders; skips if one is already running. */
     private void refreshQuotes() {
         if (quoteRefreshInFlight) return;
         quoteRefreshInFlight = true;
-        UiTasks.run(stockDataModule::refreshQuotes,
-            updated -> {
+        UiTasks.run(() -> new QuoteRound(stockDataModule.refreshQuotes(), orderManager.checkAndFill(stockDataModule.latestPrices())),
+            round -> {
                 quoteRefreshInFlight = false;
-                if (updated > 0) pricesUpdatedAt = Instant.now();
+                if (round.updated() > 0) pricesUpdatedAt = Instant.now();
                 viewStocksPanel.refresh();
+                java.util.List<OrderManager.Outcome> mine = round.orders().stream().filter(o -> o.userId() == userId).toList();
+                if (!mine.isEmpty()) {
+                    OrderManager.Outcome last = mine.get(mine.size() - 1);
+                    orderNote = "Order #" + last.orderId() + (last.filled() ? " filled" : " rejected") + (mine.size() > 1 ? " (+" + (mine.size() - 1) + " more)" : "");
+                    ordersPanel.refresh();
+                    refreshStatusBar();
+                }
                 updateStatusText();
             },
             err -> { quoteRefreshInFlight = false; log.warn("Quote refresh failed", err); });
@@ -215,8 +232,8 @@ public class StockTradingGUI extends JFrame {
 
     private void updateStatusText() {
         String prices = pricesUpdatedAt == null ? "loading…" : "updated " + ViewStocksPanel.TIME.format(pricesUpdatedAt);
-        statusBar.setText(String.format("  Logged in as: %s   |   Balance: %s   |   Prices %s",
-            username, balanceText, prices));
+        statusBar.setText(String.format("  Logged in as: %s   |   Balance: %s   |   Prices %s%s",
+            username, balanceText, prices, orderNote.isEmpty() ? "" : "   |   " + orderNote));
     }
 
     // ----------------------------------------------------------------

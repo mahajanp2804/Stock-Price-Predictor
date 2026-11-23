@@ -1,6 +1,8 @@
 package com.capstone.web;
 
 import com.capstone.data.StockDataModule;
+import com.capstone.db.OrderManager;
+import com.capstone.db.PortfolioManager;
 import com.capstone.db.WatchlistManager;
 import com.capstone.model.Stock;
 import com.capstone.model.WatchItem;
@@ -13,12 +15,13 @@ import java.util.List;
 /**
  * One StockDataModule shared by every user. Stocks are loaded the first time any
  * user needs them (from the DB cache when fresh) and their live quotes refresh
- * every minute.
+ * every minute, after which every user's triggered limit/stop orders are filled.
  */
 @Service
 class StockService {
 
     final StockDataModule data = new StockDataModule();
+    final OrderManager orders = new OrderManager(new PortfolioManager());
     private final WatchlistManager watchlist = new WatchlistManager();
 
     /** The loaded stock, loading it first if needed; null if no prices exist for it. */
@@ -54,6 +57,7 @@ class StockService {
     @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
     void refreshQuotes() {
         data.refreshQuotes();
+        orders.checkAndFill(data.latestPrices());
     }
 
     /** Tickers are 1–10 upper-case letters, digits, dots or dashes. */

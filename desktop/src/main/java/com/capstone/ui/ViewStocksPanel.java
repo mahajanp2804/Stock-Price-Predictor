@@ -85,6 +85,8 @@ class ViewStocksPanel extends JPanel {
         UiTasks.run(() -> {
                 int held = ctx.portfolio().heldQuantity(ctx.userId(), symbol);
                 if (held > 0) return String.format("You hold %d share(s) of %s. Sell them before removing it.", held, symbol);
+                int open = ctx.orders().countOpen(ctx.userId(), symbol);
+                if (open > 0) return String.format("You have %d open order(s) for %s. Cancel them before removing it.", open, symbol);
                 ctx.watchlist().remove(ctx.userId(), symbol);
                 return null;
             },

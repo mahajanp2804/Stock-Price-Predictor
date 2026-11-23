@@ -78,13 +78,29 @@
         <h2>Trade</h2>
         <label>Stock <select id="trade-symbol" required></select></label>
         <label>Quantity <input id="trade-qty" type="number" min="1" max="1000000" step="1" required></label>
+        <label>Order type <select id="trade-type">
+          <option value="MARKET">Market — now, at the latest price</option>
+          <option value="LIMIT">Limit</option>
+          <option value="STOP">Stop</option>
+        </select></label>
+        <label id="trigger-label" hidden>Trigger price ($) <input id="trade-trigger" type="number" min="0.0001" step="0.01"></label>
         <div class="row">
           <button type="submit" data-side="BUY" class="primary">Buy</button>
           <button type="submit" data-side="SELL">Sell</button>
         </div>
-        <p class="muted small">Trades execute at a fresh live quote when one is available.</p>
+        <p id="trade-explain" class="muted small">Market orders execute at a fresh live quote when one is available.</p>
         <p id="trade-msg" class="msg" role="status"></p>
       </form>
+      <div class="card">
+        <div class="card-head"><h2>Orders</h2><button id="orders-refresh">Refresh</button></div>
+        <p class="muted small">Open limit and stop orders are checked every minute and fill at the market price once triggered.</p>
+        <div class="table-wrap">
+          <table id="orders-table">
+            <thead><tr><th>#</th><th>Symbol</th><th>Order</th><th class="num">Qty</th><th class="num">Trigger</th><th>Status</th><th class="num">Fill</th><th>Note</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- Portfolio -->

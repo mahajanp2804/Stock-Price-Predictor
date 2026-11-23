@@ -75,6 +75,8 @@ class StockController {
         stocks.requireWatched(s.userId(), symbol);
         int held = portfolio.heldQuantity(s.userId(), symbol);
         if (held > 0) throw new ApiException(HttpStatus.CONFLICT, String.format("You hold %d share(s) of %s. Sell them before removing it.", held, symbol));
+        int open = stocks.orders.countOpen(s.userId(), symbol);
+        if (open > 0) throw new ApiException(HttpStatus.CONFLICT, String.format("You have %d open order(s) for %s. Cancel them before removing it.", open, symbol));
         watchlist.remove(s.userId(), symbol);
         return ResponseEntity.noContent().build();
     }

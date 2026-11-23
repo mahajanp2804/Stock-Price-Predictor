@@ -114,7 +114,7 @@ $('logout-btn').addEventListener('click', async () => {
 
 async function startApp() {
   for (const id of ['watch-msg', 'trade-msg', 'predict-msg']) setMsg($(id), '');
-  for (const id of ['portfolio-table', 'tx-table', 'watch-table']) $(id).querySelector('tbody').replaceChildren();
+  for (const id of ['portfolio-table', 'tx-table', 'watch-table', 'orders-table']) $(id).querySelector('tbody').replaceChildren();
   $('portfolio-summary').replaceChildren();
   $('value-chart').replaceChildren();
   $('predict-out').hidden = true;
@@ -135,6 +135,7 @@ document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('cli
   document.querySelectorAll('.tab').forEach((t) => { t.hidden = t.id !== 'tab-' + b.dataset.tab; });
   if (b.dataset.tab === 'portfolio') loadPortfolio();
   if (b.dataset.tab === 'transactions') loadTransactions();
+  if (b.dataset.tab === 'trade') loadOrders();
 }));
 
 // ------------------------------------------------------------------
@@ -359,22 +360,75 @@ window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz
 // Trade, portfolio, transactions
 // ------------------------------------------------------------------
 
+const ORDER_HELP = {
+  MARKET: 'Market orders execute at a fresh live quote when one is available.',
+  LIMIT: 'Limit: Buy fills when the price falls to or below the trigger; Sell fills when it rises to or above it.',
+  STOP: 'Stop: Buy fills when the price rises to or above the trigger; Sell (stop-loss) fills when it falls to or below it.',
+};
+
+$('trade-type').addEventListener('change', () => {
+  const type = $('trade-type').value;
+  $('trigger-label').hidden = type === 'MARKET';
+  $('trade-trigger').required = type !== 'MARKET';
+  $('trade-explain').textContent = ORDER_HELP[type];
+});
+
 $('trade-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const side = e.submitter ? e.submitter.dataset.side : 'BUY';
+  const type = $('trade-type').value;
   const buttons = $('trade-form').querySelectorAll('button');
   buttons.forEach((b) => { b.disabled = true; });
-  setMsg($('trade-msg'), 'Getting the latest price…');
+  const symbol = $('trade-symbol').value, quantity = Number($('trade-qty').value);
   try {
-    const res = await api('/api/trades', { method: 'POST', body: { symbol: $('trade-symbol').value, side, quantity: Number($('trade-qty').value) } });
-    setMsg($('trade-msg'), res.message + (res.livePrice ? '' : ' (live quote unavailable — used last known price)'), 'ok');
-    $('who-balance').textContent = money(res.balance);
+    if (type === 'MARKET') {
+      setMsg($('trade-msg'), 'Getting the latest price…');
+      const res = await api('/api/trades', { method: 'POST', body: { symbol, side, quantity } });
+      setMsg($('trade-msg'), res.message + (res.livePrice ? '' : ' (live quote unavailable — used last known price)'), 'ok');
+      $('who-balance').textContent = money(res.balance);
+    } else {
+      const order = await api('/api/orders', { method: 'POST', body: { symbol, side, type, quantity, triggerPrice: Number($('trade-trigger').value) } });
+      setMsg($('trade-msg'), order.status === 'OPEN'
+        ? `Order #${order.id} placed: ${type.toLowerCase()} ${side.toLowerCase()} ${quantity} ${symbol} at ${money(order.triggerPrice)}.`
+        : `Order #${order.id} triggered straight away: ${order.message}`, order.status === 'REJECTED' ? 'error' : 'ok');
+      if (order.status !== 'OPEN') refreshMe();
+      loadOrders();
+    }
   } catch (err) {
     setMsg($('trade-msg'), err.message, 'error');
   } finally {
     buttons.forEach((b) => { b.disabled = false; });
   }
 });
+
+async function loadOrders() {
+  const tbody = $('orders-table').querySelector('tbody');
+  try {
+    const orders = await api('/api/orders');
+    if (!orders.length) { emptyRow(tbody, 9, 'No limit or stop orders yet.'); return; }
+    tbody.replaceChildren(...orders.map((o) => {
+      const tr = row([
+        { text: String(o.id) }, { text: o.symbol }, { text: o.type.toLowerCase() + ' ' + o.side.toLowerCase() },
+        { text: String(o.quantity), cls: 'num' }, { text: money(o.triggerPrice), cls: 'num' },
+        { text: o.status.toLowerCase(), cls: o.status === 'FILLED' ? 'gain' : o.status === 'REJECTED' ? 'loss' : '' },
+        { text: o.fillPrice == null ? '' : money(o.fillPrice), cls: 'num' }, { text: o.message || '' },
+      ]);
+      const td = document.createElement('td');
+      if (o.status === 'OPEN') {
+        const cancel = el('button', 'Cancel', 'link');
+        cancel.addEventListener('click', async () => {
+          try { await api('/api/orders/' + o.id, { method: 'DELETE' }); loadOrders(); }
+          catch (err) { setMsg($('trade-msg'), err.message, 'error'); }
+        });
+        td.appendChild(cancel);
+      }
+      tr.appendChild(td);
+      return tr;
+    }));
+  } catch (err) { emptyRow(tbody, 9, err.message); }
+}
+
+$('orders-refresh').addEventListener('click', () => { loadOrders(); refreshMe(); });
 
 async function loadPortfolio() {
   const tbody = $('portfolio-table').querySelector('tbody');
