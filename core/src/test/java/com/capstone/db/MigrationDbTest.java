@@ -15,7 +15,7 @@ class MigrationDbTest extends DbTestSupport {
     @Test
     @DisplayName("a fresh database is migrated to the latest schema with DECIMAL money")
     void freshSchema() throws Exception {
-        assertEquals("5", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
+        assertEquals("6", scalar("SELECT MAX(CAST(version AS UNSIGNED)) FROM flyway_schema_history WHERE success = 1"));
         assertEquals("decimal(15,2)", columnType("users", "balance"));
         assertEquals("decimal(15,4)", columnType("portfolio", "avg_price"));
     }
@@ -29,7 +29,7 @@ class MigrationDbTest extends DbTestSupport {
 
         // Build the pre-Flyway schema by hand (DOUBLE money, no history table) with some data
         try (Connection c = DriverManager.getConnection(legacyUrl, USER, PASSWORD); Statement s = c.createStatement()) {
-            for (String t : new String[]{"flyway_schema_history", "watchlist", "price_history", "history_fetch_log", "transactions", "portfolio", "stocks", "users"}) s.executeUpdate("DROP TABLE IF EXISTS " + t);
+            for (String t : new String[]{"flyway_schema_history", "orders", "watchlist", "price_history", "history_fetch_log", "transactions", "portfolio", "stocks", "users"}) s.executeUpdate("DROP TABLE IF EXISTS " + t);
             s.executeUpdate("CREATE TABLE users (id INT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(100) NOT NULL UNIQUE, password VARCHAR(60) NOT NULL, balance DOUBLE NOT NULL DEFAULT 10000)");
             s.executeUpdate("CREATE TABLE stocks (id INT PRIMARY KEY AUTO_INCREMENT, stock_name VARCHAR(100) NOT NULL UNIQUE, current_price DOUBLE NOT NULL)");
             s.executeUpdate("CREATE TABLE portfolio (id INT PRIMARY KEY AUTO_INCREMENT, user_id INT NOT NULL, stock_id INT NOT NULL, quantity INT NOT NULL, avg_price DOUBLE NOT NULL, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE, UNIQUE (user_id, stock_id))");

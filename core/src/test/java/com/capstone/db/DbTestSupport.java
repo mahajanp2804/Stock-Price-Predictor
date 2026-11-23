@@ -37,6 +37,7 @@ abstract class DbTestSupport {
     @BeforeEach
     void cleanTables() throws SQLException {
         try (Connection c = DBConnection.get(); Statement s = c.createStatement()) {
+            s.executeUpdate("DELETE FROM orders");
             s.executeUpdate("DELETE FROM watchlist");
             s.executeUpdate("DELETE FROM transactions");
             s.executeUpdate("DELETE FROM portfolio");

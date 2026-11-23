@@ -23,61 +23,70 @@ public class PortfolioManager {
     private static final Logger log = LoggerFactory.getLogger(PortfolioManager.class);
 
     public TradeResult buyStock(int userId, String stockName, int quantity, double marketPrice) {
-        if (quantity <= 0) return TradeResult.refused("Quantity must be greater than zero.");
-        BigDecimal price     = Money.price(marketPrice);
-        BigDecimal totalCost = Money.total(price, quantity);
-        try (Connection conn = DBConnection.get()) {
-            conn.setAutoCommit(false);
-            try {
-                BigDecimal balance = lockBalance(conn, userId);
-                if (balance.compareTo(totalCost) < 0) {
-                    conn.rollback();
-                    return TradeResult.refused(String.format("Insufficient balance. Need %s, have %s.", Money.format(totalCost), Money.format(balance)));
-                }
-                BigDecimal newBalance = balance.subtract(totalCost);
-                updateBalance(conn, userId, newBalance);
-                int stockId = getOrCreateStockId(conn, stockName, price);
-                addToPosition(conn, userId, stockId, quantity, price);
-                logTransaction(conn, userId, stockName, quantity, price, totalCost, "BUY");
-                conn.commit();
-                return TradeResult.ok(String.format("Bought %d of %s @ %s  |  Total: %s  |  Remaining balance: %s",
-                    quantity, stockName, Money.format(price), Money.format(totalCost), Money.format(newBalance)), newBalance);
-            } catch (SQLException e) {
-                conn.rollback();
-                throw e;
-            }
-        } catch (SQLException e) {
-            log.error("Buy failed for user {} ({} x {})", userId, quantity, stockName, e);
-            return TradeResult.refused("Buy failed: " + e.getMessage());
-        }
+        return inTransaction("Buy", userId, stockName, quantity, conn -> buy(conn, userId, stockName, quantity, marketPrice));
     }
 
     public TradeResult sellStock(int userId, String stockName, int quantity, double marketPrice) {
+        return inTransaction("Sell", userId, stockName, quantity, conn -> sell(conn, userId, stockName, quantity, marketPrice));
+    }
+
+    /**
+     * Buys inside the caller's transaction (auto-commit off); the caller commits.
+     * A refused trade writes nothing, so the caller may still commit other changes.
+     */
+    TradeResult buy(Connection conn, int userId, String stockName, int quantity, double marketPrice) throws SQLException {
+        if (quantity <= 0) return TradeResult.refused("Quantity must be greater than zero.");
+        BigDecimal price     = Money.price(marketPrice);
+        BigDecimal totalCost = Money.total(price, quantity);
+        BigDecimal balance = lockBalance(conn, userId);
+        if (balance.compareTo(totalCost) < 0) {
+            return TradeResult.refused(String.format("Insufficient balance. Need %s, have %s.", Money.format(totalCost), Money.format(balance)));
+        }
+        BigDecimal newBalance = balance.subtract(totalCost);
+        updateBalance(conn, userId, newBalance);
+        int stockId = getOrCreateStockId(conn, stockName, price);
+        addToPosition(conn, userId, stockId, quantity, price);
+        logTransaction(conn, userId, stockName, quantity, price, totalCost, "BUY");
+        return TradeResult.ok(String.format("Bought %d of %s @ %s  |  Total: %s  |  Remaining balance: %s",
+            quantity, stockName, Money.format(price), Money.format(totalCost), Money.format(newBalance)), newBalance);
+    }
+
+    /** Sells inside the caller's transaction; see {@link #buy}. */
+    TradeResult sell(Connection conn, int userId, String stockName, int quantity, double marketPrice) throws SQLException {
         if (quantity <= 0) return TradeResult.refused("Quantity must be greater than zero.");
         BigDecimal price      = Money.price(marketPrice);
         BigDecimal totalValue = Money.total(price, quantity);
+        BigDecimal balance = lockBalance(conn, userId);
+        int stockId = findStockId(conn, stockName);
+        int held = stockId < 0 ? 0 : lockHeldQuantity(conn, userId, stockId);
+        if (held == 0) return TradeResult.refused("You don't hold any shares of " + stockName + ".");
+        if (held < quantity) return TradeResult.refused(String.format("You only hold %d share(s) of %s.", held, stockName));
+        removeFromPosition(conn, userId, stockId, held - quantity);
+        BigDecimal newBalance = balance.add(totalValue);
+        updateBalance(conn, userId, newBalance);
+        logTransaction(conn, userId, stockName, quantity, price, totalValue, "SELL");
+        return TradeResult.ok(String.format("Sold %d of %s @ %s  |  Received: %s  |  New balance: %s",
+            quantity, stockName, Money.format(price), Money.format(totalValue), Money.format(newBalance)), newBalance);
+    }
+
+    @FunctionalInterface
+    private interface Trade { TradeResult run(Connection conn) throws SQLException; }
+
+    /** Runs one trade in its own transaction: commit if it went through, roll back otherwise. */
+    private TradeResult inTransaction(String action, int userId, String stockName, int quantity, Trade trade) {
         try (Connection conn = DBConnection.get()) {
             conn.setAutoCommit(false);
             try {
-                BigDecimal balance = lockBalance(conn, userId);
-                int stockId = findStockId(conn, stockName);
-                int held = stockId < 0 ? 0 : lockHeldQuantity(conn, userId, stockId);
-                if (held == 0) { conn.rollback(); return TradeResult.refused("You don't hold any shares of " + stockName + "."); }
-                if (held < quantity) { conn.rollback(); return TradeResult.refused(String.format("You only hold %d share(s) of %s.", held, stockName)); }
-                removeFromPosition(conn, userId, stockId, held - quantity);
-                BigDecimal newBalance = balance.add(totalValue);
-                updateBalance(conn, userId, newBalance);
-                logTransaction(conn, userId, stockName, quantity, price, totalValue, "SELL");
-                conn.commit();
-                return TradeResult.ok(String.format("Sold %d of %s @ %s  |  Received: %s  |  New balance: %s",
-                    quantity, stockName, Money.format(price), Money.format(totalValue), Money.format(newBalance)), newBalance);
+                TradeResult result = trade.run(conn);
+                if (result.success()) conn.commit(); else conn.rollback();
+                return result;
             } catch (SQLException e) {
                 conn.rollback();
                 throw e;
             }
         } catch (SQLException e) {
-            log.error("Sell failed for user {} ({} x {})", userId, quantity, stockName, e);
-            return TradeResult.refused("Sell failed: " + e.getMessage());
+            log.error("{} failed for user {} ({} x {})", action, userId, quantity, stockName, e);
+            return TradeResult.refused(action + " failed: " + e.getMessage());
         }
     }
 

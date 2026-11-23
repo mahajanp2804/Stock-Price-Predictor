@@ -45,7 +45,7 @@ class WebApiDbTest {
         Assumptions.assumeTrue(URL != null && !URL.isBlank(), "TEST_DB_URL not set — skipping web API tests");
         DBConnection.configure(URL, env("TEST_DB_USER", "root"), env("TEST_DB_PASSWORD", ""));
         try (Connection c = DBConnection.get(); Statement s = c.createStatement()) {
-            for (String t : new String[]{"watchlist", "transactions", "portfolio", "users", "stocks", "price_history", "history_fetch_log"}) {
+            for (String t : new String[]{"orders", "watchlist", "transactions", "portfolio", "users", "stocks", "price_history", "history_fetch_log"}) {
                 s.executeUpdate("DELETE FROM " + t);
             }
         }
