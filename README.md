@@ -16,8 +16,9 @@ A Java app for **paper trading** and **short-term price forecasting**, as a **we
 - **Accounts:** register and log in. Passwords are hashed with standard bcrypt (cost 12).
 - **Paper trading:** buy and sell against a virtual balance. Money is exact (`DECIMAL` / `BigDecimal`), and each trade locks the user's balance inside one database transaction, so simultaneous trades can't overspend.
 - **Responsive UI:** all database and network work runs in the background.
-- **Portfolio:** holdings with average cost, market value and unrealised P&L.
-- **Transaction history**, with CSV export of the portfolio and of transactions.
+- **Portfolio:** holdings with average cost, market value and unrealised P&L, plus cash, total value, total return, realised P&L and a chart of portfolio value over time.
+- **Limit and stop orders:** buy below a price, take profit above one, or set a stop-loss. Open orders are checked against every quote refresh and fill at the market price once triggered; each fill runs in one database transaction, so an order can't fill twice.
+- **Transaction history** with realised P&L on every sell, and CSV export of the portfolio and of transactions.
 - **Honest price prediction:** before forecasting, every model is backtested on the stock's own history and compared with simply assuming the price stays the same. The most accurate one is used, and each forecast comes with an 80% range based on that model's real past errors.
 - **Trend analysis:** 5-day vs 20-day moving-average crossover (Strong Uptrend … Strong Downtrend).
 - **Two front ends, one core:** a browser UI backed by a REST API, and a Swing desktop app. Both use the same database, trading rules and models.
@@ -148,7 +149,13 @@ All routes return JSON. Except for register, login and health, they need `Author
 | `GET` | `/api/stocks/{symbol}/forecast?days=5` | Backtest scores for each model, the most accurate one, and its forecast with 80% ranges (`&model=` to pick one) |
 | `POST` | `/api/trades` | `{"symbol", "side": "BUY" or "SELL", "quantity"}`, executed at a fresh quote; `422` if refused |
 | `GET` | `/api/portfolio` | Holdings with market value and unrealised P&L |
-| `GET` | `/api/transactions` | Trade history, newest first |
+| `GET` | `/api/portfolio/report` | Cash, holdings, total return, realised and unrealised P&L, and daily value since the first trade |
+| `GET` | `/api/transactions` | Trade history, newest first, with `realizedPnL` on sells |
+| `GET` | `/api/orders` | Your open orders, then the 50 most recently closed |
+| `POST` | `/api/orders` | `{"symbol", "side": "BUY" or "SELL", "type": "LIMIT" or "STOP", "quantity", "triggerPrice"}`; checked against the current price straight away |
+| `DELETE` | `/api/orders/{id}` | Cancel one of your open orders |
+
+**Order types:** a limit buy fills when the price falls to or below the trigger, a limit sell when it rises to or above it; a stop buy fills when the price rises to the trigger, a stop sell (stop-loss) when it falls to it. A stock with shares held or open orders can't be removed from the watchlist.
 
 Stock routes only serve symbols on your own watchlist, so the shared API allowance can't be spent on arbitrary tickers.
 
@@ -211,5 +218,5 @@ The Predict Trend tab compares the 5-day and 20-day simple moving averages (Stro
 - [x] 14 months of cached price history, walk-forward backtest against a "price stays the same" baseline, forecast ranges
 - [x] Stocks identified by ticker, per-user watchlist, search for any US stock or ETF, price charts
 - [x] Core / desktop / web modules, REST API, browser UI, Docker Compose, CI smoke test of the container
-- [ ] Portfolio value over time, realised P&L, limit and stop orders
+- [x] Portfolio value over time, realised P&L, total return, limit and stop orders
 - [ ] Public deployment with a demo link
