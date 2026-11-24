@@ -108,6 +108,8 @@ tbody tr { cursor: default; }
 #watch-table tbody tr { cursor: pointer; }
 #watch-table tbody tr:hover, #watch-table tbody tr.selected { background: var(--hover); }
 td.empty { color: var(--muted); text-align: center; padding: 18px; }
+/* Order notes can be long (fill details): let them wrap instead of widening the table */
+#orders-table td:nth-child(8) { white-space: normal; min-width: 220px; }
 
 /* Portfolio summary */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
