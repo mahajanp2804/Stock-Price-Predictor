@@ -52,7 +52,10 @@ class WebApiDbTest {
         List<PricePoint> history = new ArrayList<>();
         LocalDate d = LocalDate.of(2026, 6, 1);
         for (int i = 0; i < 120; i++) history.add(new PricePoint(d.plusDays(i), 100 + i * 0.5 + (i % 3)));
-        new PriceCache().saveHistory("AAPL", history);   // fresh cache → no provider calls
+        new PriceCache().saveHistory("AAPL", history);   // fresh cache → no provider calls; last close 161.5
+        List<PricePoint> flat = new ArrayList<>();
+        for (int i = 0; i < 120; i++) flat.add(new PricePoint(d.plusDays(i), 400));
+        new PriceCache().saveHistory("MSFT", flat);
 
         app = SpringApplication.run(WebApp.class, "--server.port=0");
         base = "http://localhost:" + app.getEnvironment().getProperty("local.server.port");
@@ -178,15 +181,48 @@ class WebApiDbTest {
     }
 
     @Test @Order(7)
+    void limitAndStopOrders() throws Exception {
+        Res open = post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":1,\"triggerPrice\":300}", token);
+        assertEquals(201, open.status(), open.body());
+        assertEquals("OPEN", open.json().getString("status"));
+        int openId = open.json().getInt("id");
+        assertEquals(409, delete("/api/watchlist/MSFT", token).status(), "open order blocks removal");
+
+        Res filled = post("/api/orders", "{\"symbol\":\"AAPL\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":2,\"triggerPrice\":500}", token);
+        assertEquals(201, filled.status(), filled.body());
+        assertEquals("FILLED", filled.json().getString("status"), "161.5 is below the 500 limit → fills at once");
+        assertEquals(161.5, filled.json().getDouble("fillPrice"), 1e-9);
+
+        Res rejected = post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"STOP\",\"quantity\":100,\"triggerPrice\":100}", token);
+        assertEquals("REJECTED", rejected.json().getString("status"));
+        assertTrue(rejected.json().getString("message").startsWith("Rejected: Insufficient balance"), rejected.body());
+
+        assertEquals(400, post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":0,\"triggerPrice\":300}", token).status());
+        assertEquals(400, post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"MARKET\",\"quantity\":1,\"triggerPrice\":300}", token).status());
+        assertEquals(400, post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"HOLD\",\"type\":\"LIMIT\",\"quantity\":1,\"triggerPrice\":300}", token).status());
+        assertEquals(400, post("/api/orders", "{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":1}", token).status());
+        assertEquals(404, post("/api/orders", "{\"symbol\":\"NVDA\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":1,\"triggerPrice\":300}", token).status());
+
+        JSONArray list = get("/api/orders", token).array();
+        assertEquals(3, list.length());
+        assertEquals(openId, list.getJSONObject(0).getInt("id"), "open orders first");
+
+        assertEquals(204, delete("/api/orders/" + openId, token).status());
+        assertEquals(404, delete("/api/orders/" + openId, token).status(), "already cancelled");
+        assertEquals(404, delete("/api/orders/999999", token).status());
+        assertEquals(204, delete("/api/watchlist/MSFT", token).status());
+    }
+
+    @Test @Order(8)
     void watchlistChanges() throws Exception {
         assertEquals(409, delete("/api/watchlist/AAPL", token).status(), "shares still held");
         assertEquals(204, delete("/api/watchlist/TSLA", token).status());
         assertEquals(400, post("/api/watchlist", "{\"symbol\":\"bad symbol!\"}", token).status());
         assertEquals(422, post("/api/watchlist", "{\"symbol\":\"NOPE\",\"name\":\"No Data Inc\"}", token).status(), "no prices → not added");
-        assertEquals(4, get("/api/watchlist", token).array().length());
+        assertEquals(3, get("/api/watchlist", token).array().length());   // MSFT and TSLA removed
     }
 
-    @Test @Order(8)
+    @Test @Order(9)
     void logout() throws Exception {
         assertEquals(204, post("/api/auth/logout", "", token).status());
         assertEquals(401, get("/api/me", token).status());
